@@ -12,3 +12,5 @@ switches between projects with ⌘K, and emails you a morning briefing.
 - **Test it:** `cd cereal && npm test`.
 
 Everything else is in [cereal/README.md](cereal/README.md).
+
+MIT licensed; see [LICENSE](LICENSE).
