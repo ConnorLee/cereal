@@ -65,6 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var briefingLine = "Morning briefing: checking…"
     weak var briefingItem: NSMenuItem?
     var briefingTimer: Timer?
+    // `--self-test REPORT` exercises the real window, bridge, menus and recovery, then writes REPORT (see runSelfTest).
+    var selfTest: String?
+    var selfTestStarted = false
+    var picksForTest: [URL]?
     var base: String { "http://127.0.0.1:\(port)" }
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -80,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func parseArguments() {
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--data-dir"), i + 1 < args.count { dataDir = args[i + 1] }
+        if let i = args.firstIndex(of: "--self-test"), i + 1 < args.count { selfTest = args[i + 1] }
         if let i = args.firstIndex(of: "--port"), i + 1 < args.count, let p = Int(args[i + 1]) { port = p; portFixed = true }
         else { port = Self.freePort(from: 4320) }
     }
@@ -153,6 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 self.ready = false
                 if Date().timeIntervalSince(self.serverStartedAt) > 60 { self.restarts = 0 }
                 NSLog("Cereal engine exited (%d); restarts so far: %d", proc.terminationStatus, self.restarts)
+                // 3: another engine (Cereal in Terminal, or another copy of the app) is using the same data.
+                if proc.terminationStatus == 3 {
+                    return self.showProblem("Cereal is already running with the same projects, in Terminal or in another copy of the app. Two at once would overwrite each other’s changes, so quit that one, then try again.")
+                }
                 if self.restarts < 3 {
                     self.restarts += 1
                     if let url = self.web.url, url.host == "127.0.0.1", let f = url.fragment, self.pendingHash == nil { self.pendingHash = "#" + f }
@@ -177,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 guard let self else { return }
                 if (resp as? HTTPURLResponse)?.statusCode == 200 {
                     self.ready = true
-                    self.web.load(URLRequest(url: URL(string: self.base + "/" + (self.pendingHash ?? ""))!))
+                    self.loadApp(hash: self.pendingHash)
                     self.pendingHash = nil
                     self.refreshBriefingLine()
                     if self.briefingTimer == nil {
@@ -193,6 +202,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 }
             }
         }.resume()
+    }
+
+    /// Shows Cereal at `hash`. When the window already shows that page (after an engine or page crash), it reloads:
+    /// loading the same address again would only jump within the old page, not fetch it afresh.
+    func loadApp(hash: String?) {
+        if let cur = web.url, cur.host == "127.0.0.1", cur.port == port, hash == nil || hash == cur.fragment.map({ "#" + $0 }) {
+            web.reload()
+        } else {
+            web.load(URLRequest(url: URL(string: base + "/" + (hash ?? ""))!))
+        }
     }
 
     func showProblem(_ message: String) {
@@ -251,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func chooseFolders(multiple: Bool, then: @escaping ([URL]) -> Void) {
+        if let picks = picksForTest { return then(picks) }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -347,9 +367,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     // Pages anywhere but Cereal itself (news, docs, mail) open in the default browser, never in Cereal's window.
+    static func opensOutside(_ url: URL, mainFrame: Bool, linkActivated: Bool) -> Bool {
+        guard let scheme = url.scheme, ["http", "https", "mailto"].contains(scheme), !["127.0.0.1", "localhost"].contains(url.host ?? "") else { return false }
+        return mainFrame || linkActivated
+    }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        let mainFrame = action.targetFrame?.isMainFrame ?? true
-        if let url = action.request.url, let scheme = url.scheme, ["http", "https", "mailto"].contains(scheme), !["127.0.0.1", "localhost"].contains(url.host ?? ""), mainFrame || action.navigationType == .linkActivated {
+        if let url = action.request.url, Self.opensOutside(url, mainFrame: action.targetFrame?.isMainFrame ?? true, linkActivated: action.navigationType == .linkActivated) {
             NSWorkspace.shared.open(url)
             return decisionHandler(.cancel)
         }
@@ -359,9 +382,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if let url = action.request.url { NSWorkspace.shared.open(url) }
         return nil
     }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard ready, let report = selfTest, !selfTestStarted, webView.url?.host == "127.0.0.1" else { return }
+        selfTestStarted = true
+        Task { @MainActor in await self.runSelfTest(report) }
+    }
+
     // If the page's process dies (memory pressure, a WebKit crash), bring it back instead of leaving a blank window.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        if ready { web.load(URLRequest(url: URL(string: base + "/" + (web.url?.fragment.map { "#" + $0 } ?? ""))!)) }
+        NSLog("Cereal page process ended; reloading")
+        if ready { loadApp(hash: web.url?.fragment.map { "#" + $0 }) }
     }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = NSAlert(); alert.messageText = message; alert.runModal(); completionHandler()
@@ -450,7 +480,117 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
     @objc func openBriefing() { go("#/briefing") }
     @objc func goHome() { go("#/") }
-    @objc func reload() { if ready { web.load(URLRequest(url: URL(string: base)!)) } }
+    @objc func reload() { if ready { loadApp(hash: web.url?.fragment.map { "#" + $0 }) } }
+
+    // ---------- self-test ----------
+
+    /// Drives the real window from inside the app: rendering, the drop overlay, a dropped folder, the folder-picker
+    /// bridge, menus, the briefing line, link handling, and recovery from a web-process and an engine crash. Writes
+    /// a JSON report and snapshots of the window next to REPORT. CEREAL_SELFTEST_DROP / _PICK name test folders.
+    @MainActor func runSelfTest(_ reportPath: String) async {
+        var checks: [[String: Any]] = []
+        func check(_ name: String, _ ok: Bool, _ detail: String = "") { checks.append(["name": name, "ok": ok, "detail": detail]) }
+        func js(_ code: String) async -> Any? { try? await web.callAsyncJavaScript(code, arguments: [:], contentWorld: .page) }
+        func waitFor(_ cond: String, _ seconds: Double = 10) async -> Bool {
+            let end = Date().addingTimeInterval(seconds)
+            while Date() < end {
+                if await js("return !!(\(cond))") as? Bool == true { return true }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            return false
+        }
+        func waitUntil(_ seconds: Double, _ cond: () -> Bool) async -> Bool {
+            let end = Date().addingTimeInterval(seconds)
+            while Date() < end { if cond() { return true }; try? await Task.sleep(nanoseconds: 200_000_000) }
+            return false
+        }
+        let outDir = URL(fileURLWithPath: reportPath).deletingLastPathComponent()
+        func snap(_ name: String) async {
+            guard let img = try? await web.takeSnapshot(configuration: nil), let tiff = img.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
+            try? png.write(to: outDir.appendingPathComponent(name))
+        }
+        let env = ProcessInfo.processInfo.environment
+        let rendered = "document.querySelector('.topbar') && (document.querySelector('.drop-zone') || document.querySelector('.story'))"
+
+        let inner = await js("return [innerWidth, innerHeight]") as? [Int] ?? []
+        check("window is on screen at a usable size", window.isVisible && window.frame.width >= 720 && window.frame.height >= 520, "\(Int(window.frame.width))×\(Int(window.frame.height))")
+        check("the page fills the window", inner.count == 2 && abs(CGFloat(inner[0]) - web.bounds.width) < 2 && abs(web.bounds.width - window.contentLayoutRect.width) < 2 && abs(web.frame.height - window.frame.height) < 2, "page \(inner.map(String.init).joined(separator: "×")), view \(Int(web.bounds.width))×\(Int(web.bounds.height))")
+        check("the page comes from Cereal's own engine", web.url?.host == "127.0.0.1" && web.url?.port == port, web.url?.absoluteString ?? "none")
+        check("the interface renders", await waitFor(rendered))
+        check("the native bridge is there", await js("return typeof window.cerealNative?.pickFolder") as? String == "function")
+        check("the desktop layout is on", await js("return document.documentElement.classList.contains('is-desktop')") as? Bool == true)
+        await snap("selftest-1-window.png")
+
+        web.onDragState?(true)
+        check("dragging a folder over the window shows the drop overlay", await waitFor("document.documentElement.classList.contains('drop-ready')", 3))
+        await snap("selftest-2-drop-overlay.png")
+        web.onDragState?(false)
+        check("the overlay goes away when the drag leaves", await waitFor("!document.documentElement.classList.contains('drop-ready')", 3))
+
+        if let drop = env["CEREAL_SELFTEST_DROP"] {
+            web.onFolders?([URL(fileURLWithPath: drop)])
+            let ok = await waitFor("/^#\\/p\\/[\\w-]+\\/sources$/.test(location.hash) && document.querySelector('.cand')", 15)
+            check("dropping a folder on the window opens its new project's Sources", ok, await js("return location.hash") as? String ?? "")
+            await snap("selftest-3-dropped-folder.png")
+        }
+        if let pick = env["CEREAL_SELFTEST_PICK"] {
+            picksForTest = [URL(fileURLWithPath: pick)]
+            let r = await js("return await window.cerealNative.pickFolder()") as? [String: Any]
+            check("the page's Choose a folder reaches the native dialog and back", r?["path"] as? String == pick, (r?["path"] as? String) ?? "\(String(describing: r))")
+            picksForTest = []
+            let c = await js("return await window.cerealNative.pickFolder()") as? [String: Any]
+            check("cancelling the dialog tells the page", c?["cancelled"] as? Bool == true)
+            picksForTest = nil
+        }
+
+        let menu = NSMenu()
+        menuNeedsUpdate(menu)
+        let titles = menu.items.map(\.title)
+        check("the menu bar icon and its menu are there", statusItem.button?.image != nil && ["Open Cereal", "Add a Project Folder…", "Morning Briefing Settings…", "Open at Login", "Quit Cereal"].allSatisfy(titles.contains), titles.joined(separator: " | "))
+        let mine: [Selector] = [#selector(addProjectFromMenu), #selector(openBriefing), #selector(reload), #selector(goHome), #selector(showWindow)]
+        let wired = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }.filter { $0.action.map(mine.contains) ?? false }
+        let unwired = wired.filter { NSApp.target(forAction: $0.action!, to: $0.target, from: $0) == nil }.map(\.title)
+        check("the app's menu commands are connected", wired.count == 5 && unwired.isEmpty, unwired.isEmpty ? "\(wired.count) commands" : "not connected: \(unwired.joined(separator: ", "))")
+
+        go("#/briefing")
+        check("Morning Briefing (⌘,) opens", await waitFor("location.hash === '#/briefing' && /Morning Briefing/i.test(document.body.innerText)", 8))
+        await snap("selftest-4-briefing.png")
+        briefingLine = "Morning briefing: checking…"
+        refreshBriefingLine()
+        check("the menu bar shows the briefing status", await waitUntil(5) { self.briefingLine != "Morning briefing: checking…" }, briefingLine)
+
+        let outside = Self.opensOutside(URL(string: "https://news.example.com/story")!, mainFrame: true, linkActivated: true)
+            && Self.opensOutside(URL(string: "mailto:me@example.com")!, mainFrame: true, linkActivated: true)
+            && Self.opensOutside(URL(string: "https://news.example.com/story")!, mainFrame: false, linkActivated: true)
+            && !Self.opensOutside(URL(string: "https://ads.example.com/frame")!, mainFrame: false, linkActivated: false)
+            && !Self.opensOutside(URL(string: "\(base)/#/briefing")!, mainFrame: true, linkActivated: true)
+            && !Self.opensOutside(URL(string: "about:srcdoc")!, mainFrame: false, linkActivated: false)
+        check("outside links open in the browser; Cereal's own pages stay in the window", outside)
+
+        if web.responds(to: Selector(("_webProcessIdentifier"))), let pid = (web.value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value, pid > 0 {
+            _ = await js("window.__beforeCrash = true")
+            kill(pid, SIGKILL)
+            check("the page comes back after its web process crashes", await waitFor("document.querySelector('.topbar') && !window.__beforeCrash && location.hash === '#/briefing'", 15))
+        } else {
+            check("the page comes back after its web process crashes", false, "couldn’t find the web process")
+        }
+
+        if let old = server?.processIdentifier {
+            go("#/briefing")
+            _ = await waitFor("location.hash === '#/briefing'", 5)
+            _ = await js("window.__beforeCrash = true")
+            kill(old, SIGKILL)
+            let back = await waitUntil(20) { self.ready && self.server?.processIdentifier != old && self.server?.isRunning == true }
+            let page = back ? await waitFor("document.querySelector('.topbar') && !window.__beforeCrash && location.hash === '#/briefing'", 15) : false
+            check("the engine restarts after a crash and the window keeps its place", back && page, "engine \(old) → \(server?.processIdentifier ?? 0)")
+        }
+
+        let passed = checks.filter { $0["ok"] as? Bool == true }.count
+        let report: [String: Any] = ["version": appVersion, "passed": passed, "total": checks.count, "checks": checks]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: URL(fileURLWithPath: reportPath)) }
+        if env["CEREAL_SELFTEST_QUIT"] != nil { NSApp.terminate(nil) }
+    }
 
     func jsString(_ s: String) -> String { String(data: try! JSONSerialization.data(withJSONObject: [s]), encoding: .utf8)!.dropFirst().dropLast().description }
 }

@@ -8,7 +8,8 @@ import { Engine } from './lib/engine.mjs';
 import { projectDefs } from './lib/projects.mjs';
 import { showCommit } from './lib/git.mjs';
 import { isSecretPath, containsSecret } from './lib/safety.mjs';
-import { tildify } from './lib/paths.mjs';
+import { tildify, dataDir } from './lib/paths.mjs';
+import { claimEngine, ALREADY_RUNNING } from './lib/engine-lock.mjs';
 import { outlineSummary, claudeSummary } from './lib/summary.mjs';
 import { gatherNews } from './lib/news.mjs';
 import { BriefingStore, mailerFor, saveMailConfig, clearMailConfig, briefingStatus, applySettings, composeBriefing, deliver, startVerification, briefingInputs, briefingNews, newsTopics, confirmVerification, checkToken } from './lib/briefing-delivery.mjs';
@@ -19,6 +20,12 @@ const PORT = Number(process.env.PORT || 4317);
 const HOST = '127.0.0.1';
 const POLL_MS = Number(process.env.CEREAL_POLL_MS || 15000);
 
+const holder = await claimEngine(dataDir(), { port: PORT, desktop: !!process.env.CEREAL_DESKTOP });
+if (holder) {
+  const who = holder.desktop ? 'Cereal for Mac' : `Cereal (started in Terminal, at http://127.0.0.1:${holder.port})`;
+  console.error(`${who} is already running with this data, so this copy won’t start: two would overwrite each other’s changes. Quit that one first.`);
+  process.exit(ALREADY_RUNNING);
+}
 const store = new Store();
 const engine = new Engine(store, projectDefs());
 const briefings = new BriefingStore(store.dir);
