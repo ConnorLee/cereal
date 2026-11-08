@@ -336,7 +336,22 @@ function dispatchHtml(d) {
 }
 
 // The blank slate is the first thing a new user sees, so adding a project happens right here, not in a config file.
+// In Cereal for Mac, folders come from the native dialog or a drop on the window; no paths to type.
+const isDesktop = () => !!window.cerealNative;
+if (isDesktop()) document.documentElement.classList.add('is-desktop');
+const pickFolder = () => (isDesktop() ? window.cerealNative.pickFolder() : post('/api/pick-folder').catch(() => ({ cancelled: true })));
+const folderName = (p) => base(p).replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+function desktopDrop(first) {
+  return `<div class="drop-zone${first ? ' first' : ''}">
+    <p class="drop-title">${first ? 'Drag a project folder here.' : 'Add a project: drag its folder onto this window.'}</p>
+    <p class="drop-sub">Or choose one. macOS asks once whether Cereal may read it. Cereal shows you what it found and reads nothing until you approve.</p>
+    <button type="button" class="btn primary" data-act="desktop-add">Choose a folder…</button>
+    <p class="status-msg" id="addStatus" role="status"></p>
+  </div>`;
+}
+
 function addProjectForm(first) {
+  if (isDesktop()) return desktopDrop(first);
   return `<form class="add-form" id="addForm">
     ${first ? '<p>Name a project and choose its folder. Cereal looks there with Git, shows you what it found, and reads nothing until you approve it.</p>' : ''}
     <label>Name<input name="name" required placeholder="e.g. Field Notes" autocomplete="off"></label>
@@ -1306,8 +1321,17 @@ document.addEventListener('click', async (ev) => {
   if (act === 'edition-done') { localStorage.setItem('cereal-edition-read', dayKey()); $('#edition')?.classList.add('is-read'); window.scrollTo({ top: 0 }); return; }
   if (act === 'edition-open') { localStorage.removeItem('cereal-edition-read'); $('#edition')?.classList.remove('is-read'); return; }
   if (act === 'pick-new') {
-    const r = await post('/api/pick-folder').catch(() => ({ cancelled: true }));
-    if (r.path) $('#addForm [name=path]').value = tild(r.path);
+    const r = await pickFolder();
+    if (r.path) { $('#addForm [name=path]').value = tild(r.path); const n = $('#addForm [name=name]'); if (!n.value) n.value = folderName(r.path); }
+    return;
+  }
+  if (act === 'desktop-add') {
+    const r = await pickFolder();
+    if (!r.path) return;
+    const status = $('#addStatus');
+    if (status) status.textContent = 'Looking for it with Git…';
+    try { const p = await post('/api/projects', { name: folderName(r.path), path: r.path }); await loadState(); location.hash = `#/p/${p.id}/sources`; }
+    catch (e) { if (status) status.textContent = e.message; else alert(e.message); }
     return;
   }
   if (act === 'forget') {
@@ -1335,7 +1359,10 @@ document.addEventListener('click', async (ev) => {
     const status = $('#srcStatus');
     status.textContent = act === 'pick' ? 'Waiting for you to choose a folder…' : 'Re-scanning…';
     try {
-      if (act === 'pick') { const r = await post(`/api/projects/${id}/pick-folder`); if (r.cancelled) { status.textContent = 'No folder chosen.'; return; } }
+      if (act === 'pick') {
+        if (isDesktop()) { const r = await pickFolder(); if (!r.path) { status.textContent = 'No folder chosen.'; return; } await post(`/api/projects/${id}/add-folder`, { path: r.path }); }
+        else { const r = await post(`/api/projects/${id}/pick-folder`); if (r.cancelled) { status.textContent = 'No folder chosen.'; return; } }
+      }
       else await post(`/api/projects/${id}/discover`);
       paintSources(project(id), await api(`/api/projects/${id}/discovery`));
     } catch (e) { status.textContent = e.message; }

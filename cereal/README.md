@@ -7,7 +7,23 @@ for each project: what am I building, where did I leave off, and what should I w
 the folders you approve, their Git history, and your Claude Code and Codex session logs — read-only —
 and keeps a source-linked context record per project, so switching never means re-explaining one.
 
-## Run it
+## Get the Mac app
+
+Download [Cereal.dmg](https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg), open it and drag **Cereal** to Applications. Open Cereal, then drag your
+project folders onto its window or Dock icon, or choose them with **Add a Project Folder…** (⌘O). macOS
+asks once whether Cereal may read a protected folder and remembers the answer; Cereal shows what it found
+and reads nothing until you approve. Closing the window keeps Cereal in the menu bar so the morning
+briefing still goes out; turn on **Open at Login** there. Everything else lives in the app.
+
+The app bundles Node, so there is nothing else to install. It needs a Mac with Apple silicon and macOS 13
+or later. It isn't notarized yet: the first time you open it, macOS blocks it; choose **Open Anyway** in
+System Settings › Privacy & Security.
+
+Build it yourself with `npm run desktop` (needs Xcode's command-line tools): it writes
+`desktop/dist/Cereal.app` and `desktop/dist/Cereal.dmg`, signed ad hoc, or with `CODESIGN_IDENTITY` if set.
+The app keeps its data in the same place as the command-line version, so don't run both at once.
+
+## Run it from source
 
 ```sh
 cd cereal
@@ -122,7 +138,7 @@ from Home to preview tomorrow's email, read past ones and set up delivery.
 
 ## Starting Cereal so it can read your folders
 
-macOS decides which apps may read `~/Documents` and `~/Desktop`. Double-click
+The Mac app asks for access itself. From source: macOS decides which apps may read `~/Documents` and `~/Desktop`. Double-click
 `scripts/start-cereal.command` (or run `npm start` in Terminal). The first time, macOS asks whether
 Terminal may read those folders; allow it and Cereal can read the projects you approved there.
 

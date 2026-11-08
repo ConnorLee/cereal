@@ -13,6 +13,7 @@
     "demo": "node scripts/build-demo.mjs && node scripts/package.mjs",
     "package": "node scripts/package.mjs",
     "briefing:send": "node scripts/briefing-run.mjs",
-    "briefing:launchd": "node scripts/briefing-launchd.mjs"
+    "briefing:launchd": "node scripts/briefing-launchd.mjs",
+    "desktop": "node desktop/build.mjs"
   }
 }

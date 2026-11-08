@@ -6,7 +6,9 @@ switches between projects with ⌘K, and emails you a morning briefing.
 
 - **Try it:** https://cereal-demo.asyncly.app — the homepage, a download for Mac, and a demo with three
   sample projects at `/demo.html`. No sign-up; the demo uses fictional data only.
-- **Run it:** `cd cereal && npm start` (Node.js 22, no dependencies), then open http://127.0.0.1:4317.
+- **Get the Mac app:** [Cereal.dmg](https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg). Drag it to Applications, open it, and drag your project
+  folders onto it. Apple silicon, macOS 13 or later; nothing else to install.
+- **Run it from source:** `cd cereal && npm start` (Node.js 22, no dependencies), then open http://127.0.0.1:4317.
 - **Test it:** `cd cereal && npm test`.
 
 Everything else is in [cereal/README.md](cereal/README.md).

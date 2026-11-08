@@ -1,4 +1,5 @@
 /.asyncly/
 /projects/
+/cereal/desktop/dist/
 node_modules/
 .DS_Store

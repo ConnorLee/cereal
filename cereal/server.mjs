@@ -332,3 +332,9 @@ server.listen(PORT, HOST, () => {
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { store.flush(); process.exit(0); });
+
+// Inside Cereal for Mac the app owns this process: if the app goes away, however it ended, so does the server.
+if (process.env.CEREAL_DESKTOP) {
+  const parent = process.ppid;
+  setInterval(() => { if (process.ppid !== parent) { store.flush(); process.exit(0); } }, 2000).unref();
+}

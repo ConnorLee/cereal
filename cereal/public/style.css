@@ -571,3 +571,12 @@ pre.code .cl.hl { background: rgba(249, 226, 175, 0.16); box-shadow: none; }
   .mail-tools .small-note { display: none; }
 }
 .briefing-page { --primary: var(--cereal); --primary-foreground: #fff; }
+
+/* ---------- Cereal for Mac: room for the traffic lights, and folder drops ---------- */
+.is-desktop .topbar { padding-top: 30px; -webkit-app-region: drag; }
+.is-desktop .topbar a, .is-desktop .topbar button { -webkit-app-region: no-drag; }
+.drop-zone { margin: 8px 0 0; padding: 36px 32px; border: 2px dashed var(--rule-2); border-radius: 22px; background: var(--surface); text-align: center; display: grid; justify-items: center; gap: 10px; }
+.drop-zone.first { padding: 64px 32px; }
+.drop-title { margin: 0; font-size: 26px; font-weight: 500; letter-spacing: -0.03em; }
+.drop-sub { margin: 0 0 6px; max-width: 46ch; color: var(--ink-2); font-weight: 300; }
+.drop-ready body::after { content: "Drop to give Cereal this project"; position: fixed; inset: 14px; z-index: 100; display: grid; place-items: center; border: 3px dashed var(--cereal); border-radius: 24px; background: color-mix(in srgb, var(--cereal) 10%, rgb(251 251 252 / 0.92)); color: #4A3CC4; font: 500 28px/1.2 var(--font); letter-spacing: -0.03em; pointer-events: none; }
