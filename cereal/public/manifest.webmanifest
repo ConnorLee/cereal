@@ -1,0 +1,14 @@
+{
+  "name": "Cereal",
+  "short_name": "Cereal",
+  "description": "A local-first home for the projects you're juggling, with a morning briefing across them.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#96BFFA",
+  "theme_color": "#96BFFA",
+  "icons": [
+    { "src": "brand/cereal-icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "brand/cereal-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "brand/cereal-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

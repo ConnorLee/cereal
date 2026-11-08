@@ -1,0 +1,20 @@
+[
+  {
+    "id": "northwind",
+    "name": "Northwind",
+    "tagline": "Offline-first field notes app for iPad",
+    "keyword": "northwind",
+    "seeds": ["~/Code", "~/Documents/Northwind"],
+    "markers": ["*.xcodeproj"],
+    "brand": { "surface": "#EEF2EE", "ink": "#14201A", "accent": "#3F7D5B", "glow": "#CFE3D6", "mode": "light" }
+  },
+  {
+    "id": "lumen",
+    "name": "Lumen",
+    "tagline": "Ambient lighting scenes for small venues",
+    "keyword": "lumen",
+    "seeds": ["~/Code"],
+    "markers": ["package.json"],
+    "brand": { "surface": "#0E0D14", "ink": "#F4F2FA", "accent": "#F2A33A", "glow": "#7A5CFF", "mode": "dark" }
+  }
+]

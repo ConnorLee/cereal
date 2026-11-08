@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cereal</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="brand/cereal-icon-32.png">
+  <link rel="apple-touch-icon" href="brand/cereal-icon-180.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/ui.css">
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <a class="wordmark" href="#/" aria-label="Cereal portfolio"><img class="mark" src="brand/cereal-icon-32.png" alt="" width="22" height="22">Cereal</a>
+    <nav class="pills" id="pills" aria-label="Projects"></nav>
+    <div class="topbar-right">
+      <button class="switch-btn" id="switchBtn" type="button" aria-keyshortcuts="Meta+K">Switch <kbd>⌘K</kbd></button>
+      <span class="runtimes" id="runtimes"></span>
+    </div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+  <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Source"></aside>
+  <div class="switcher" id="switcher" hidden role="dialog" aria-modal="true" aria-label="Switch project"></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

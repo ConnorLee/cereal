@@ -1,0 +1,18 @@
+{
+  "name": "cereal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cereal — Build everything. Lose no context. A local-first workspace for switching between projects without losing your place.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "demo": "node scripts/build-demo.mjs && node scripts/package.mjs",
+    "package": "node scripts/package.mjs",
+    "briefing:send": "node scripts/briefing-run.mjs",
+    "briefing:launchd": "node scripts/briefing-launchd.mjs"
+  }
+}

@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cereal — daily reports for serial entrepreneurs</title>
+<meta name="description" content="Cereal is a local-first home for your projects. Download it for Mac, choose the folders it may read, and get a morning briefing in your inbox.">
+<meta name="theme-color" content="#96BFFA">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Cereal">
+<meta property="og:title" content="Cereal — daily reports for serial entrepreneurs">
+<meta property="og:description" content="A local-first home for the projects you’re juggling. It remembers where you left off and emails you what moved each morning.">
+<meta property="og:image" content="https://cereal-demo.asyncly.app/brand/cereal-icon-512.png">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/png" sizes="32x32" href="brand/cereal-icon-32.png">
+<link rel="apple-touch-icon" href="brand/cereal-icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script>
+  // Deep links in briefings and older demo links still land on the workspace.
+  if (location.hash.startsWith('#/')) location.replace('demo.html' + location.hash);
+</script>
+<style>
+  :root {
+    --blue: #96BFFA; --blue-deep: #6E9FF0;
+    --ink: #141B33; --ink-2: #333D5C; --quiet: #5A6480;
+    --purple: #4A44D9; --purple-2: #5451D9; --white: #FDFDFD;
+    --paper: #FFFFFF; --rule: #E6E7EF;
+    --font: "Aeonik Pro", "Aeonik", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+    --round: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", var(--font);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--blue); color: var(--ink); font: 400 17px/1.55 var(--font); letter-spacing: -0.012em; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+
+  .bar { display: flex; align-items: center; justify-content: space-between; padding: 24px 0 0; }
+  .miniword { display: inline-flex; align-items: center; gap: 9px; font: 800 22px/1 var(--round); letter-spacing: -0.04em; text-decoration: none; color: #fff; }
+  .navicon { width: 26px; height: 26px; border-radius: 7px; display: block; box-shadow: 0 2px 6px rgb(24 44 92 / 0.25); }
+  .bar nav { display: flex; align-items: center; gap: 22px; font-size: 14.5px; font-weight: 500; }
+  .bar nav a { text-decoration: none; color: var(--ink); opacity: .82; }
+  .bar nav a:hover { opacity: 1; }
+  .bar .pill-link { padding: 9px 16px; border-radius: 999px; background: var(--ink); color: #fff; opacity: 1; }
+
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 36px; row-gap: 0; align-items: start; padding: 44px 0 0; }
+  .display { grid-column: 1; grid-row: 1; }
+  .aside { grid-column: 2; grid-row: 1; }
+  .tagline { grid-column: 1 / -1; grid-row: 2; }
+  .hero .copy { grid-column: 1 / -1; grid-row: 3; }
+  .display { margin: 0; font: 850 clamp(86px, 13.5vw, 184px)/0.82 var(--round); letter-spacing: -0.055em; color: #fff; }
+  .display span { color: #fff; }
+  .tagline { margin: 18px 0 0; font: 800 clamp(26px, 3.6vw, 44px)/1.12 var(--round); letter-spacing: -0.025em; color: var(--purple); }
+  .sub { margin: 22px 0 0; max-width: 46ch; font-size: 17.5px; line-height: 1.5; color: var(--ink-2); }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; margin: 30px 0 0; }
+  .button { display: inline-flex; align-items: center; gap: 10px; padding: 16px 26px; border-radius: 999px; background: #fff; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none; box-shadow: 0 10px 24px rgb(24 44 92 / 0.18); transition: transform 160ms ease, box-shadow 160ms ease; }
+  .button:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgb(24 44 92 / 0.22); }
+  .button svg { width: 16px; height: 16px; }
+  .cta .link { font-size: 15px; font-weight: 500; color: var(--ink); text-decoration: none; border-bottom: 1.5px solid rgb(20 27 51 / 0.28); }
+  .meta { margin: 14px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); opacity: .85; }
+
+  .aside { display: flex; flex-direction: column; align-items: flex-end; gap: 18px; padding-top: 6px; max-width: 440px; }
+  .sticker { display: flex; align-items: center; gap: 14px; padding: 12px 18px 12px 12px; border-radius: 18px; background: var(--white); box-shadow: 0 14px 30px rgb(24 44 92 / 0.20); transform: rotate(-2.5deg); }
+  .emblem { width: 56px; height: 56px; border-radius: 13px; display: block; box-shadow: 0 2px 6px rgb(60 40 0 / 0.22); }
+  .sticker-text { display: flex; flex-direction: column; gap: 6px; }
+  .sticker-text b { font: 800 15px/1 var(--round); letter-spacing: -0.01em; color: #1B2350; }
+  .sticker-text em { align-self: flex-start; font: 700 13px/1 var(--round); font-style: normal; color: #fff; background: var(--purple-2); border-radius: 999px; padding: 6px 11px; }
+
+  /* The spoon, as the operator drew it: only its own characters, in silver, with light sweeping across and a soft glow. */
+  .spoon { margin: 0; font: 600 5px/1.05 ui-monospace, SFMono-Regular, Menlo, monospace; font-size: min(5px, calc((100vw - 48px) / 72)); white-space: pre; color: #DCE6F7;
+    background: linear-gradient(115deg, #A9B9D6 0%, #E4ECF9 30%, #FFFFFF 45%, #E4ECF9 55%, #A9B9D6 80%) 0 0 / 260% 100%;
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 2px rgb(255 255 255 / 0.55));
+    animation: sheen 3.8s cubic-bezier(.45, 0, .25, 1) infinite, glow 3.8s ease-in-out infinite; }
+  @keyframes sheen { from { background-position: 100% 0; } to { background-position: -60% 0; } }
+  @keyframes glow { 0%, 100% { filter: drop-shadow(0 0 1.5px rgb(255 255 255 / 0.45)); } 50% { filter: drop-shadow(0 0 5px rgb(255 255 255 / 0.9)) drop-shadow(0 0 14px rgb(214 228 255 / 0.55)); } }
+  @media (prefers-reduced-motion: reduce) { .spoon { animation: none; background-position: 40% 0; } }
+
+  /* ---------- Showcase: the app window and its ⌘K switcher, drawn with shadcn/ui's anatomy ---------- */
+  .showcase { --radius: 12px; --border: #E7E8EE; --muted: #F4F5F8; --muted-fg: #6B7287; --fg: #141B33; --accent: #2F6B4A;
+    padding: 44px 0 72px; perspective: 1600px; }
+  /* Derived where the project colour is set, so they follow it when the window switches projects. */
+  .showcase, .window { --accent-tint: color-mix(in srgb, var(--accent) 12%, #fff); --accent-text: color-mix(in srgb, var(--accent) 72%, #000); }
+  .frame { width: min(1060px, 100%); margin: 0 auto; padding: 7px; border-radius: 22px; background: rgb(255 255 255 / 0.38); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.55), 0 40px 80px -30px rgb(24 44 92 / 0.45), 0 18px 36px -18px rgb(24 44 92 / 0.25); backdrop-filter: blur(12px); }
+  .window { position: relative; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px rgb(20 27 51 / 0.08); color: var(--fg); font-size: 14px; line-height: 1.5; }
+  .win-bar { display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 14px 0 16px; border-bottom: 1px solid var(--border); background: #FAFAFC; }
+  .lights { display: flex; gap: 7px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.12); }
+  .lights i:nth-child(2) { background: #FEBC2E; } .lights i:nth-child(3) { background: #28C840; }
+  .crumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-fg); }
+  .crumbs b { font-weight: 600; color: var(--fg); transition: color 200ms ease; }
+  .crumbs img { width: 16px; height: 16px; border-radius: 4.5px; }
+  .crumbs svg { width: 12px; height: 12px; opacity: .6; }
+  .sw-trigger { margin-left: auto; white-space: nowrap; display: inline-flex; align-items: center; gap: 10px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font-size: 12.5px; color: var(--muted-fg); box-shadow: 0 1px 2px rgb(20 27 51 / 0.05); }
+  .sw-trigger svg { width: 14px; height: 14px; }
+  kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--border); border-bottom-width: 2px; background: var(--muted); font: 600 11px/1 var(--font); color: var(--muted-fg); }
+  kbd.press { background: var(--fg); border-color: var(--fg); color: #fff; }
+
+  .win-body { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 430px; }
+  .side { padding: 14px 10px; border-right: 1px solid var(--border); background: #FCFCFD; }
+  .side-label { padding: 6px 10px 8px; font-size: 11.5px; font-weight: 600; color: var(--muted-fg); }
+  .side-list { position: relative; display: grid; gap: 2px; }
+  .side-pill { position: absolute; left: 0; right: 0; top: 0; height: 40px; border-radius: 9px; background: var(--accent-tint); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); transition: background-color 300ms ease; }
+  .side-item { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 9px; font-size: 13.5px; font-weight: 500; }
+  .side-item img { width: 20px; height: 20px; border-radius: 5.5px; }
+  .side-item .badge { margin-left: auto; }
+  .side-foot { margin-top: 18px; padding: 12px 10px 0; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted-fg); }
+  .side-foot img { width: 18px; height: 18px; border-radius: 5px; }
+  .live { width: 7px; height: 7px; border-radius: 50%; background: #2F8F5B; box-shadow: 0 0 0 3px rgb(47 143 91 / 0.18); flex: none; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 5px rgb(47 143 91 / 0.06); } }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; border: 1px solid transparent; font-size: 11.5px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .badge-secondary { background: var(--muted); color: #4B5268; }
+  .badge-outline { border-color: var(--border); color: var(--muted-fg); }
+  .badge-brand { background: var(--accent-tint); color: var(--accent-text); }
+  .badge-warn { background: #FBF0DD; color: #8A560C; }
+  .badge-ok { background: #E5F3EA; color: #23744A; }
+
+  .main { padding: 26px 30px 28px; min-width: 0; }
+  .ctx-head { display: flex; align-items: center; gap: 14px; }
+  .ctx-head img { width: 44px; height: 44px; border-radius: 11px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+  .ctx-name { margin: 0; font-size: 26px; line-height: 1.1; font-weight: 600; letter-spacing: -0.035em; color: var(--accent-text); }
+  .ctx-tag { margin: 2px 0 0; font-size: 13px; color: var(--muted-fg); }
+  .ctx-kicker { margin: 22px 0 8px; font-size: 12px; font-weight: 600; color: var(--accent-text); }
+  .story { margin: 0; max-width: 34em; font-size: 21px; line-height: 1.32; letter-spacing: -0.025em; font-weight: 300; color: #3B4256; }
+  .story b { font-weight: 600; color: var(--fg); }
+  .cards { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-top: 22px; }
+  .card { border: 1px solid var(--border); border-radius: var(--radius); background: #fff; box-shadow: 0 1px 2px rgb(20 27 51 / 0.04); }
+  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; font-size: 12.5px; font-weight: 600; }
+  .card-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--border); font-size: 13px; }
+  .card-row span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-body { padding: 0 14px 12px; font-size: 13px; color: var(--muted-fg); }
+  .card-body p { margin: 0 0 8px; color: #3B4256; }
+  .actions { display: flex; gap: 8px; margin-top: 18px; }
+  .btn { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); background: #fff; color: var(--fg); box-shadow: 0 1px 2px rgb(20 27 51 / 0.05); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ⌘K: shadcn's Command dialog */
+  .overlay { position: absolute; inset: 48px 0 0; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; align-items: start; padding-top: 34px; background: rgb(20 27 51 / 0.16); backdrop-filter: blur(3px); opacity: 0; pointer-events: none; }
+  .cmdk { min-width: 0; max-width: calc(100% - 24px); width: 520px; padding: 6px; border-radius: 18px; background: rgb(255 255 255 / 0.55); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.7), 0 30px 70px -20px rgb(20 27 51 / 0.45); backdrop-filter: blur(14px); }
+  .cmdk-inner { overflow: hidden; border-radius: 13px; background: #fff; box-shadow: 0 0 0 1px rgb(20 27 51 / 0.07); }
+  .cmdk-input { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--muted-fg); }
+  .cmdk-input svg { width: 16px; height: 16px; flex: none; }
+  .cmdk-input .typed { color: var(--fg); }
+  .caret { width: 1.5px; height: 17px; margin-left: -8px; background: var(--fg); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .cmdk-input kbd { margin-left: auto; }
+  .cmdk-group { padding: 6px; }
+  .cmdk-label { padding: 6px 8px 4px; font-size: 11.5px; font-weight: 600; color: var(--muted-fg); }
+  .cmdk-list { position: relative; }
+  .cmdk-pill { position: absolute; left: 0; right: 0; top: 0; height: 72px; border-radius: 10px; background: var(--muted); }
+  .cmdk-item { position: relative; display: flex; align-items: center; gap: 12px; height: 72px; padding: 0 10px; border-radius: 10px; }
+  .cmdk-item img { width: 36px; height: 36px; border-radius: 9px; flex: none; box-shadow: 0 1px 2px rgb(0 0 0 / 0.1); }
+  .cmdk-text { flex: 1; min-width: 0; }
+  .cmdk-text p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmdk-name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+  .cmdk-name .state { font-size: 12px; font-weight: 400; color: var(--muted-fg); letter-spacing: 0; }
+  .cmdk-sub { font-size: 12.5px; color: #3B4256; display: flex !important; align-items: center; gap: 6px; }
+  .cmdk-sub2 { font-size: 12px; color: var(--muted-fg); }
+  .cmdk-sep { height: 1px; margin: 0 6px; background: var(--border); }
+  .recent { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+  .recent i { width: 6px; height: 6px; border-radius: 50%; background: #2F8F5B; flex: none; }
+  .recent b { font-weight: 600; }
+  .recent .muted { color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; }
+  .cmdk-foot { display: flex; align-items: center; gap: 14px; height: 38px; padding: 0 14px; border-top: 1px solid var(--border); background: #FAFAFC; font-size: 11.5px; color: var(--muted-fg); }
+  .cmdk-foot span { display: inline-flex; align-items: center; gap: 5px; }
+  .cmdk-foot span:last-child { margin-left: auto; }
+  .caption { margin: 18px auto 0; max-width: 60ch; text-align: center; font-size: 14px; color: var(--ink-2); }
+  .caption b { font-weight: 600; color: var(--ink); }
+
+  /* The fine print: how to start, and the promises. Quiet, on the blue, below the showcase. */
+  .fine { max-width: 920px; margin: 0 auto; padding: 8px 0 0; color: var(--ink-2); }
+  .fine-label { margin: 0 0 14px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); opacity: .7; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .step { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 14px; background: rgb(255 255 255 / 0.22); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.32); }
+  .step .n { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: rgb(255 255 255 / 0.6); font: 700 11px/1 var(--font); color: var(--purple); font-variant-numeric: tabular-nums; }
+  .step h2 { margin: 1px 0 2px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .step p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); opacity: .85; }
+  code { font: 500 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 4px; border-radius: 4px; background: rgb(255 255 255 / 0.45); color: var(--ink-2); }
+  .promises { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; margin: 26px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--ink-2); opacity: .8; }
+  .promises li { display: inline-flex; align-items: center; gap: 7px; }
+  .promises li::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .5; }
+  .promises a { color: inherit; }
+  footer { max-width: 920px; margin: 34px auto 0; padding: 18px 0 34px; border-top: 1px solid rgb(255 255 255 / 0.35); display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; font-size: 12px; color: var(--ink-2); opacity: .7; }
+  footer a { color: inherit; }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 8px; padding-top: 34px; }
+    .display, .aside, .tagline, .hero .copy { grid-column: 1; grid-row: auto; }
+    .display { order: 1; }
+    .tagline { order: 2; max-width: 20ch; }
+    .hero .copy { order: 3; }
+    .aside { order: 4; flex-direction: row; align-items: center; justify-content: flex-start; gap: 20px; flex-wrap: wrap; padding: 18px 0 0; }
+    .sticker { transform: rotate(-2deg); }
+    .win-body { grid-template-columns: 1fr; }
+    .side { display: none; }
+    .cards { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 22px; }
+    .bar nav a:not(.pill-link) { display: none; }
+    .display { font-size: 74px; }
+    .tagline { font-size: 27px; max-width: 18ch; }
+    .sub { font-size: 16px; }
+    .frame { padding: 5px; border-radius: 18px; }
+    .main { padding: 20px 18px; }
+    .story { font-size: 17px; }
+    .crumbs span, .crumbs svg { display: none; }
+    .sw-label { display: none; }
+    .cmdk-item { height: 64px; } .cmdk-pill { height: 64px; }
+    .cmdk-sub2, .cmdk-foot span:nth-child(2), .cmdk-foot span:last-child { display: none !important; }
+    .cmdk-foot span { white-space: nowrap; }
+    .overlay { padding-top: 16px; }
+    .steps { grid-template-columns: 1fr; gap: 8px; }
+    .promises { justify-content: flex-start; flex-direction: column; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <a class="miniword" href="./"><img class="navicon" src="brand/cereal-icon-32.png" width="26" height="26" alt="">cereal.</a>
+    <nav>
+      <a href="demo.html">See the demo</a>
+      <a class="pill-link" href="Cereal.zip" download>Download</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 class="display">cereal<span>.</span></h1>
+
+      <aside class="aside">
+        <div class="sticker">
+          <img class="emblem" src="brand/cereal-icon-180.png" width="56" height="56" alt="Cereal app icon">
+          <div class="sticker-text"><b>Sent to your inbox</b><em>every morning.</em></div>
+        </div>
+        <pre class="spoon" role="img" aria-label="A silver spoon drawn in ASCII, catching the light">      %#***#%%
+ //....*****......\\....
+ //++**************....\...\
+ `=+++******************...\...
+%`+=+++********************\..\..\
+#**\+=+++**********************..\..
+%\**\\==+++**********************\.\\.
+ \##**\+=++++++*********************.\\\
+ \\*##*\\==+++++++********************\\\
+  \\*###*\.===++++++++++++*************\\\
+   \\\**##*...===+++++++++++++++++++++++\`
+    \\\\++###*....=-========+++++++++==+``
+      .\..****###*..............****####/`
+        ..\...**++*######*######*++*****\\.......
+           ...\.....+**++***++**.......****..........
+              \................/............#*+++\.......
+                      ..........       ...........*++\......
+                                             ..\...\..*++\......
+                                                 ..\...\.*++\.......
+                                                    ..\...\..+++.......
+                                                        .\\..\\.*+=\.......
+                                                           ..\\..\..+==........
+                                                              ..\\..\..++=+........
+                                                                 ...\..\...+==........
+                                                                     ..\..\\..++=+........
+                                                                        ..\..\\..*++=\........
+                                                                           ..\..\\*.*++=+.........
+                                                                              ..\..\.***++==+.....\...\
+                                                                                 ..\....***++=+*+.\...\....
+                                                                                    ..\....***+++++*+*\..........
+                                                                                        .\....\**++=*++***............
+                                                                                          ..\....\**++=+*+*+****#......
+                                                                                              .......+*==*++*+*****#*##*
+                                                                                                 ........++*+++******+/%
+                                                                                                    ...........**...../
+                                                                                                            #####%</pre>
+      </aside>
+
+      <p class="tagline">daily reports for serial entrepreneurs</p>
+
+      <div class="copy">
+        <p class="sub">A local-first home for the projects you’re juggling. It reads the folders you approve, remembers where you left off, and emails you what moved each morning.</p>
+        <div class="cta" id="download">
+          <a class="button" href="Cereal.zip" download>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M2.5 11.5v1A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Download for Mac
+          </a>
+          <a class="link" href="demo.html">or explore the demo →</a>
+        </div>
+        <p class="meta">Free · macOS · needs Node.js 22<br>Your projects stay on your Mac.</p>
+      </div>
+    </section>
+
+    <section class="showcase" aria-label="Cereal switching between three sample projects">
+      <div class="frame" id="frame">
+        <div class="window" id="win">
+          <div class="win-bar">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span class="crumbs"><span>Cereal</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><img id="crumbIcon" src="media/northwind-icon.svg" alt=""><b id="crumbName">Northwind</b></span>
+            <span class="sw-trigger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span class="sw-label">Switch project</span> <kbd id="kbdK">⌘K</kbd></span>
+          </div>
+          <div class="win-body">
+            <nav class="side" aria-hidden="true">
+              <div class="side-label">Projects</div>
+              <div class="side-list" id="sideList"><span class="side-pill" id="sidePill"></span></div>
+              <div class="side-foot"><img src="brand/cereal-icon-32.png" alt="">Morning Briefing <span class="badge badge-outline" style="margin-left:auto">8:00</span></div>
+            </nav>
+            <div class="main" id="main"></div>
+          </div>
+          <div class="overlay" id="overlay" aria-hidden="true">
+            <div class="cmdk" id="cmdk">
+              <div class="cmdk-inner">
+                <div class="cmdk-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span class="typed" id="typed"></span><span class="caret"></span><span id="ph">Switch project…</span><kbd>esc</kbd></div>
+                <div class="cmdk-group"><div class="cmdk-label">Projects</div><div class="cmdk-list" id="cmdkList"><span class="cmdk-pill" id="cmdkPill"></span></div></div>
+                <div class="cmdk-sep"></div>
+                <div class="cmdk-group"><div class="cmdk-label">Recent</div><div id="recent"></div></div>
+                <div class="cmdk-foot"><span><kbd id="kbdDown">↓</kbd><kbd>↑</kbd> to choose</span><span><kbd id="kbdEnter">↵</kbd> to open</span><span>Read-only · nothing leaves your Mac</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="caption"><b>⌘K to switch.</b> Every project opens where you left it, with what changed while you were away.</p>
+    </section>
+  </main>
+
+  <section class="fine" aria-label="How to start">
+    <p class="fine-label">Three steps</p>
+    <ol class="steps">
+      <li class="step"><span class="n">1</span><div><h2>Unzip and open</h2><p>Open <code>Start Cereal.command</code>. It runs at <code>127.0.0.1:4317</code>.</p></div></li>
+      <li class="step"><span class="n">2</span><div><h2>Choose your folders</h2><p>Cereal reads nothing until you approve a folder.</p></div></li>
+      <li class="step"><span class="n">3</span><div><h2>Turn on the morning email</h2><p>Verify your address and add a free Resend key.</p></div></li>
+    </ol>
+    <ul class="promises">
+      <li>Read-only: never writes to your repos</li>
+      <li>Emails carry short summaries, never files or secrets</li>
+      <li><span>Needs <a href="https://nodejs.org" rel="noopener">Node.js 22</a></span></li>
+      <li><a href="demo.html">Look at the demo first</a></li>
+    </ul>
+  </section>
+  <footer>
+    <span>Made for people making things.</span>
+    <span>No account. No cloud. No telemetry.</span>
+  </footer>
+</div>
+<script src="vendor/motion.js"></script>
+<script>
+(() => {
+  // Sample projects, as the demo has them. The switcher cycles through them on its own.
+  const P = [
+    { id: 'northwind', name: 'Northwind', tag: 'Offline-first field notes for botanists', accent: '#2F6B4A', icon: 'media/northwind-icon.svg', side: ['1', 'badge-brand'], live: true,
+      state: '1 agent working', sub: '<b>1 change</b> since you left 3m ago <span class="live"></span> one working', sub2: 'You were reading D02 — Photo storage format',
+      story: 'The last commit, <b>“Measure cold start on iPad mini”</b>, landed five hours ago. <b>Claude</b> finished <b>“HEIC fallback for herbarium export”</b> and says its tests pass. <b>D02</b>, photo storage format, still needs your call.',
+      next: [['Decision needs reconciliation: D02', 'badge-warn', 'Needs your call'], ['HEIC fallback is ready for review', 'badge-secondary', 'Agent reported']],
+      agent: ['Claude Code', 'HEIC fallback for herbarium export', '9 tests passed'], cta: 'Open the Claude Code session' },
+    { id: 'lumen', name: 'Lumen', tag: 'Ambient lighting scenes for small venues', accent: '#C9761A', icon: 'media/lumen-icon.svg', side: ['2', 'badge-secondary'],
+      state: 'Quiet since yesterday', sub: '<b>2 changes</b> since you left 1h ago', sub2: 'You were reading Handoff, around line 4',
+      story: '<b>Codex</b> says it finished <b>“Android bridge pairing”</b>. Your last commit, <b>“iOS bridge pairing”</b>, landed yesterday. Android pairing still drops after the first scene.',
+      next: [['Android bridge pairing is ready for review', 'badge-warn', 'Unverified'], ['Scene editor polish is ready for review', 'badge-secondary', 'Agent reported']],
+      agent: ['Codex', 'Android bridge pairing', 'No tests reported'], cta: 'Open the Codex session' },
+    { id: 'paperboat', name: 'Paperboat', tag: 'A quiet newsletter for writers who publish monthly', accent: '#A85F33', icon: 'media/paperboat-icon.svg', side: ['Quiet', 'badge-outline'],
+      state: 'Quiet since Oct 22', sub: 'Nothing new since you left 2w ago', sub2: 'You were reading Paperboat decisions',
+      story: 'Nothing has moved since <b>October 22</b>. Your last commit was <b>“Archive page”</b>, and <b>D01</b>, plain text emails by default, is settled.',
+      next: [['Decide whether Paperboat is paused', 'badge-outline', 'Quiet 17 days']],
+      agent: ['Claude Code', 'Archive page', 'Shipped with an RSS feed'], cta: 'Read the decisions' },
+  ];
+  const RECENT = [['Northwind', 'HEIC fallback for herbarium export', 'Claude Code, 4m ago'], ['Lumen', 'Android bridge pairing', 'Codex, 3h ago'], ['Northwind', 'Offline tile cache', 'Claude Code, 5h ago']];
+  const $ = (id) => document.getElementById(id);
+  const win = $('win'), main = $('main');
+  $('sideList').insertAdjacentHTML('beforeend', P.map((p) => `<div class="side-item"><img src="${p.icon}" alt="">${p.name}${p.live ? '<span class="live"></span>' : ''}<span class="badge ${p.side[1]}">${p.side[0]}</span></div>`).join(''));
+  $('cmdkList').insertAdjacentHTML('beforeend', P.map((p, i) => `<div class="cmdk-item"><img src="${p.icon}" alt=""><div class="cmdk-text"><p class="cmdk-name" style="color:${p.accent}">${p.name}<span class="state">${p.state}</span></p><p class="cmdk-sub">${p.sub}</p><p class="cmdk-sub2">${p.sub2}</p></div><kbd>${i + 1}</kbd></div>`).join(''));
+  $('recent').innerHTML = RECENT.map(([p, t, m]) => `<div class="recent"><i></i><b>${p}</b> ${t} <span class="muted">${m}</span></div>`).join('');
+  const paint = (p) => {
+    win.style.setProperty('--accent', p.accent);
+    $('crumbIcon').src = p.icon; $('crumbName').textContent = p.name;
+    main.innerHTML = `<div class="ctx-head"><img src="${p.icon}" alt=""><div><p class="ctx-name">${p.name}</p><p class="ctx-tag">${p.tag}</p></div></div>
+      <p class="ctx-kicker">Pick up where you left off</p><p class="story">${p.story}</p>
+      <div class="cards"><div class="card"><div class="card-head">What’s next <span class="badge badge-secondary">${p.next.length}</span></div>${p.next.map(([t, v, l]) => `<div class="card-row"><span>${t}</span><span class="badge ${v}">${l}</span></div>`).join('')}</div>
+      <div class="card"><div class="card-head">Latest agent <span class="badge badge-ok">${p.agent[0]}</span></div><div class="card-body"><p>${p.agent[1]}</p>${p.agent[2]}</div></div></div>
+      <div class="actions"><span class="btn btn-primary">${p.cta}</span><span class="btn">Copy resume command</span></div>`;
+  };
+  let cur = 0;
+  paint(P[cur]);
+
+  const M = window.Motion;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rowTop = (list, i) => list.querySelectorAll(list.id === 'sideList' ? '.side-item' : '.cmdk-item')[i].offsetTop;
+  const place = (pill, list, i) => { pill.style.transform = `translateY(${rowTop(list, i)}px)`; };
+  place($('sidePill'), $('sideList'), 0);
+  place($('cmdkPill'), $('cmdkList'), 0);
+  if (!M || reduce) { $('overlay').style.opacity = 1; return; } // still frame: switcher open over Northwind
+
+  const { animate, inView } = M;
+  $("frame").style.opacity = 0; // revealed by the entrance below
+  const spring = { type: 'spring', visualDuration: 0.35, bounce: 0.18 };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const press = async (k) => { k.classList.add('press'); await wait(180); k.classList.remove('press'); };
+  const movePill = (pill, list, i) => animate(pill, { y: rowTop(list, i) }, spring);
+  let running = false, visible = false;
+
+  async function typeOut(text) { $('ph').style.display = text ? 'none' : ''; $('typed').textContent = ''; for (const ch of text) { $('typed').textContent += ch; await wait(70); } }
+  async function cycle() {
+    if (running) return; running = true;
+    while (visible) {
+      await wait(2200); if (!visible) break;
+      await press($('kbdK'));
+      $('typed').textContent = ''; $('ph').style.display = '';
+      animate($('overlay'), { opacity: [0, 1] }, { duration: 0.18 });
+      await animate($('cmdk'), { opacity: [0, 1], scale: [0.96, 1], y: [8, 0], filter: ['blur(4px)', 'blur(0px)'] }, spring);
+      animate($('cmdkList').querySelectorAll('.cmdk-item'), { opacity: [0, 1], x: [-6, 0] }, { delay: M.stagger(0.04), duration: 0.25 });
+      await wait(700);
+      const next = (cur + 1) % P.length;
+      await typeOut(P[next].name.slice(0, 2).toLowerCase());
+      for (let i = cur; i !== next; i = (i + 1) % P.length) { await press($('kbdDown')); movePill($('cmdkPill'), $('cmdkList'), (i + 1) % P.length); await wait(420); }
+      await wait(350);
+      await press($('kbdEnter'));
+      animate($('cmdk'), { opacity: 0, scale: 0.97, y: 4 }, { duration: 0.16 });
+      await animate($('overlay'), { opacity: 0 }, { duration: 0.18 });
+      await animate(main, { opacity: [1, 0], y: [0, -6], filter: ['blur(0px)', 'blur(3px)'] }, { duration: 0.14 });
+      cur = next; paint(P[cur]);
+      movePill($('sidePill'), $('sideList'), cur);
+      await animate(main, { opacity: [0, 1], y: [8, 0], filter: ['blur(3px)', 'blur(0px)'] }, spring);
+      animate(main.querySelectorAll('.card'), { opacity: [0, 1], y: [10, 0] }, { delay: M.stagger(0.06), ...spring });
+      await wait(1800);
+    }
+    running = false;
+  }
+  // The window rises into place once, then the switcher plays while it's on screen.
+  inView('#frame', () => {
+    animate('#frame', { opacity: [0, 1], y: [48, 0], rotateX: [8, 0] }, { type: 'spring', visualDuration: 0.8, bounce: 0.2 });
+    visible = true; cycle();
+    return () => { visible = false; };
+  }, { amount: 0.35 });
+})();
+</script>
+</body>
+</html>

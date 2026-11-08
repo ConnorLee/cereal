@@ -1,0 +1,4 @@
+/.asyncly/
+/projects/
+node_modules/
+.DS_Store

@@ -1,0 +1,323 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { claudeProjectsDir, codexSessionsDir, codexIndexFile, isInside } from './paths.mjs';
+import { containsSecret } from './safety.mjs';
+
+// Session logs can be gigabytes. Cereal reads only the head (identity, first prompt) and the tail
+// (latest status, recent edits, commits, test results) and caches by size+mtime.
+const HEAD_BYTES = 256 * 1024;
+const TAIL_BYTES = 1024 * 1024;
+const MAX_AGE_DAYS = Number(process.env.CEREAL_AGENT_DAYS || 21);
+const RUNNING_WINDOW_MS = 3 * 60 * 1000;
+const CACHE_VERSION = 2; // bump when summary parsing changes
+
+async function readSlices(file, size) {
+  const fh = await fs.open(file, 'r');
+  try {
+    const headLen = Math.min(size, HEAD_BYTES);
+    const head = Buffer.alloc(headLen);
+    await fh.read(head, 0, headLen, 0);
+    let tail = '';
+    if (size > HEAD_BYTES) {
+      const start = Math.max(HEAD_BYTES, size - TAIL_BYTES);
+      const buf = Buffer.alloc(size - start);
+      await fh.read(buf, 0, buf.length, start);
+      tail = buf.toString('utf8');
+      tail = tail.slice(tail.indexOf('\n') + 1); // drop partial first line
+    }
+    return { head: head.toString('utf8'), tail };
+  } finally {
+    await fh.close();
+  }
+}
+
+async function readFirstLine(file, max = 4 * 1024 * 1024) {
+  const fh = await fs.open(file, 'r');
+  try {
+    let pos = 0, acc = '';
+    const buf = Buffer.alloc(256 * 1024);
+    while (pos < max) {
+      const { bytesRead } = await fh.read(buf, 0, buf.length, pos);
+      if (!bytesRead) break;
+      const chunk = buf.toString('utf8', 0, bytesRead);
+      const nl = chunk.indexOf('\n');
+      if (nl >= 0) return acc + chunk.slice(0, nl);
+      acc += chunk; pos += bytesRead;
+    }
+    return acc;
+  } finally {
+    await fh.close();
+  }
+}
+
+function parseLines(text) {
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    try { out.push(JSON.parse(line)); } catch { /* partial line at slice edge */ }
+  }
+  return out;
+}
+
+const trim = (s, n = 280) => {
+  if (!s) return '';
+  const t = String(s).replace(/\s+/g, ' ').trim();
+  return containsSecret(t) ? '[redacted: looked like a credential]' : (t.length > n ? t.slice(0, n - 1) + '…' : t);
+};
+
+const COMMIT_RE = /\[([\w./-]+)(?: \(root-commit\))? ([0-9a-f]{7,40})\] ([^\n]{1,160})/g;
+const TEST_RES = [
+  [/\*\* TEST SUCCEEDED \*\*/, 'passed', 'xcodebuild test succeeded'],
+  [/\*\* TEST FAILED \*\*/, 'failed', 'xcodebuild test failed'],
+  [/Executed (\d+) tests?, with (\d+) failures?/, (m) => (m[2] === '0' ? 'passed' : 'failed'), (m) => `${m[1]} tests, ${m[2]} failures`],
+  [/# pass (\d+)\s+# fail (\d+)/, (m) => (m[2] === '0' ? 'passed' : 'failed'), (m) => `${m[1]} passed, ${m[2]} failed`],
+  [/Tests:\s+(?:(\d+) failed, )?(\d+) passed/, (m) => (m[1] ? 'failed' : 'passed'), (m) => `${m[2]} passed${m[1] ? `, ${m[1]} failed` : ''}`],
+  [/(\d+) passed(?:,? (\d+) failed)?/, (m) => (m[2] && m[2] !== '0' ? 'failed' : 'passed'), (m) => m[0]],
+  [/\*\* BUILD SUCCEEDED \*\*/, 'passed', 'xcodebuild build succeeded'],
+  [/\*\* BUILD FAILED \*\*/, 'failed', 'xcodebuild build failed'],
+];
+
+function scanOutputText(text, acc, at) {
+  if (!text) return;
+  const s = String(text).slice(0, 20000);
+  for (const m of s.matchAll(COMMIT_RE)) acc.commits.set(m[2], { sha: m[2], branch: m[1], subject: trim(m[3].split('\\n')[0], 140), at });
+  for (const [re, st, label] of TEST_RES) {
+    const m = re.exec(s);
+    if (m) { acc.test = { status: typeof st === 'function' ? st(m) : st, summary: typeof label === 'function' ? label(m) : label, at }; break; }
+  }
+}
+
+function collectPaths(str, acc) {
+  if (!str) return;
+  for (const m of String(str).matchAll(/\/Users\/[^\s"'`;|&<>)]+/g)) {
+    acc.pathRefs.push(m[0].replace(/[.,:]+$/, ''));
+    if (acc.pathRefs.length > 400) acc.pathRefs.shift();
+  }
+}
+
+function textOf(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map((c) => (typeof c === 'string' ? c : c.text || (typeof c.content === 'string' ? c.content : ''))).join('\n');
+  return '';
+}
+
+// ---------- Claude Code ----------
+
+export function summarizeClaude(records, file) {
+  const acc = { commits: new Map(), test: null, files: new Set(), pathRefs: [] };
+  let sessionId = path.basename(file, '.jsonl'), cwd = null, branch = null, startedAt = null, lastAt = null;
+  let title = null, firstPrompt = null, lastPrompt = null, lastAssistant = null, lastType = null, pendingTool = false;
+  for (const r of records) {
+    if (r.sessionId) sessionId = r.sessionId;
+    if (r.timestamp) { startedAt = startedAt || r.timestamp; lastAt = r.timestamp; }
+    if (r.cwd && !cwd) cwd = r.cwd;
+    if (r.gitBranch && r.gitBranch !== 'HEAD') branch = r.gitBranch;
+    if (r.type === 'custom-title' && r.customTitle) title = r.customTitle;
+    if (r.type === 'summary' && r.summary && !title) title = r.summary;
+    if (r.type === 'last-prompt' && r.lastPrompt) lastPrompt = r.lastPrompt;
+    if (r.type === 'user' && r.message) {
+      lastType = 'user';
+      const c = r.message.content;
+      if (typeof c === 'string' && !c.startsWith('<') && !firstPrompt) firstPrompt = c;
+      if (Array.isArray(c)) {
+        for (const part of c) {
+          if (part.type === 'text' && part.text && !part.text.startsWith('<') && !firstPrompt) firstPrompt = part.text;
+          if (part.type === 'tool_result') { pendingTool = false; scanOutputText(textOf(part.content), acc, r.timestamp); }
+        }
+      }
+    }
+    if (r.type === 'assistant' && r.message && Array.isArray(r.message.content)) {
+      lastType = 'assistant';
+      for (const part of r.message.content) {
+        if (part.type === 'text' && part.text?.trim()) lastAssistant = { text: part.text, at: r.timestamp };
+        if (part.type === 'tool_use') {
+          pendingTool = true;
+          const inp = part.input || {};
+          if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(part.name) && inp.file_path) { acc.files.add(inp.file_path); collectPaths(inp.file_path, acc); }
+          if (part.name === 'Bash') collectPaths(inp.command, acc);
+          if (inp.file_path && !acc.files.has(inp.file_path)) collectPaths(inp.file_path, acc);
+        }
+      }
+    }
+  }
+  if (cwd) collectPaths(cwd, acc);
+  const idleMs = lastAt ? Date.now() - Date.parse(lastAt) : Infinity;
+  const status = idleMs < RUNNING_WINDOW_MS && (pendingTool || lastType === 'user') ? 'running' : 'idle';
+  return {
+    tool: 'claude-code', id: sessionId, file, cwd, branch, startedAt, lastAt, status,
+    title: trim(title || lastPrompt || firstPrompt, 120) || `Claude Code session ${String(startedAt || '').slice(0, 10)}`,
+    task: trim(firstPrompt, 400),
+    latest: lastAssistant ? { text: trim(lastAssistant.text, 600), at: lastAssistant.at } : null,
+    filesChanged: [...acc.files].slice(-40),
+    commits: [...acc.commits.values()].slice(-20),
+    test: acc.test,
+    pathRefs: acc.pathRefs,
+    resume: `claude --resume ${sessionId}`,
+  };
+}
+
+async function listClaudeFiles() {
+  const root = claudeProjectsDir();
+  let dirs = [];
+  try { dirs = await fs.readdir(root, { withFileTypes: true }); } catch { return { available: false, files: [], root }; }
+  const files = [];
+  for (const d of dirs) {
+    if (!d.isDirectory()) continue;
+    const dir = path.join(root, d.name);
+    let entries = [];
+    try { entries = await fs.readdir(dir); } catch { continue; }
+    for (const e of entries) if (e.endsWith('.jsonl')) files.push(path.join(dir, e));
+  }
+  return { available: true, files, root };
+}
+
+// ---------- Codex ----------
+
+export function summarizeCodex(meta, records, file, names) {
+  const acc = { commits: new Map(), test: null, files: new Set(), pathRefs: [] };
+  const p = meta?.payload || {};
+  let cwd = p.cwd || null;
+  let lastAt = null, startedAt = p.timestamp || meta?.timestamp || null, firstPrompt = null, lastAssistant = null;
+  let complete = null, aborted = null, started = null;
+  for (const r of records) {
+    if (r.timestamp) lastAt = r.timestamp;
+    const q = r.payload || {};
+    if (r.type === 'turn_context' && q.cwd) cwd = cwd || q.cwd;
+    if (r.type === 'response_item' && q.type === 'message') {
+      const t = textOf(q.content);
+      if (q.role === 'user' && t && !t.startsWith('<') && !firstPrompt) firstPrompt = t;
+      if (q.role === 'assistant' && t.trim()) lastAssistant = { text: t, at: r.timestamp };
+    }
+    if (r.type === 'response_item' && /function_call|custom_tool_call/.test(q.type || '') && !/output/.test(q.type)) {
+      const args = q.arguments || q.input || '';
+      collectPaths(args, acc);
+      for (const m of String(args).matchAll(/\*\*\* (?:Update|Add) File: ([^\n]+)/g)) acc.files.add(m[1].trim());
+    }
+    if (r.type === 'response_item' && /output/.test(q.type || '')) scanOutputText(typeof q.output === 'string' ? q.output : textOf(q.output), acc, r.timestamp);
+    if (r.type === 'event_msg' && q.type === 'task_started') started = r.timestamp;
+    if (r.type === 'event_msg' && q.type === 'task_complete') { complete = { at: r.timestamp, message: q.last_agent_message, error: q.error?.message }; }
+    if (r.type === 'event_msg' && q.type === 'turn_aborted') aborted = { at: r.timestamp, reason: q.reason };
+    if (r.type === 'event_msg' && q.type === 'item_completed' && q.item) {
+      const it = q.item;
+      if (it.type === 'CommandExecution') { collectPaths(Array.isArray(it.command) ? it.command.join(' ') : it.command, acc); scanOutputText(it.aggregated_output || it.output, acc, r.timestamp); }
+      if (it.type === 'FileChange' && Array.isArray(it.changes)) for (const c of it.changes) if (c.path) acc.files.add(c.path);
+    }
+  }
+  if (cwd) collectPaths(cwd, acc);
+  const id = p.id || path.basename(file).replace(/^rollout-[\dT-]+-/, '').replace(/\.jsonl$/, '');
+  const lastEnd = [complete?.at, aborted?.at].filter(Boolean).sort().pop();
+  const idleMs = lastAt ? Date.now() - Date.parse(lastAt) : Infinity;
+  const status = started && (!lastEnd || started > lastEnd) && idleMs < RUNNING_WINDOW_MS * 5 ? 'running' : complete?.error ? 'error' : 'idle';
+  const files = [...acc.files].map((f) => (path.isAbsolute(f) || !cwd ? f : path.join(cwd, f)));
+  files.forEach((f) => collectPaths(f, acc));
+  return {
+    tool: 'codex', id, file, cwd, branch: p.git?.branch || null, startedAt, lastAt, status,
+    subagent: !!p.source?.subagent, parentId: p.parent_thread_id || null,
+    title: trim(names.get(id) || firstPrompt, 120) || `Codex session ${String(startedAt || '').slice(0, 10)}`,
+    task: trim(firstPrompt, 400),
+    latest: complete?.message ? { text: trim(complete.message, 600), at: complete.at } : lastAssistant ? { text: trim(lastAssistant.text, 600), at: lastAssistant.at } : complete?.error ? { text: trim(`Error: ${complete.error}`, 300), at: complete.at } : null,
+    filesChanged: files.slice(-40),
+    commits: [...acc.commits.values()].slice(-20),
+    test: acc.test,
+    pathRefs: acc.pathRefs,
+    resume: `codex resume ${id}`,
+  };
+}
+
+async function listCodexFiles() {
+  const root = codexSessionsDir();
+  const files = [];
+  const walk = async (dir, depth) => {
+    let entries = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return false; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory() && depth < 4) await walk(p, depth + 1);
+      else if (e.isFile() && e.name.endsWith('.jsonl')) files.push(p);
+    }
+    return true;
+  };
+  const available = await walk(root, 0);
+  return { available, files, root };
+}
+
+async function loadCodexNames() {
+  const names = new Map();
+  try {
+    const text = await fs.readFile(codexIndexFile(), 'utf8');
+    for (const r of parseLines(text)) if (r.id && r.thread_name) names.set(r.id, r.thread_name);
+  } catch { /* optional */ }
+  return names;
+}
+
+// ---------- Scan with cache ----------
+
+export async function scanAgents(cache = {}) {
+  const cutoff = Date.now() - MAX_AGE_DAYS * 864e5;
+  const [claude, codex, names] = await Promise.all([listClaudeFiles(), listCodexFiles(), loadCodexNames()]);
+  const next = {};
+  const sessions = [];
+  const errors = [];
+  const handle = async (file, kind) => {
+    let st;
+    try { st = await fs.stat(file); } catch { return; }
+    if (st.mtimeMs < cutoff) return;
+    const key = `${CACHE_VERSION}:${st.size}:${st.mtimeMs}`;
+    if (cache[file]?.key === key) {
+      const s = cache[file].summary;
+      // "Running" is time-dependent: a log that stopped growing means the agent stopped.
+      const window = s.tool === 'codex' ? RUNNING_WINDOW_MS * 5 : RUNNING_WINDOW_MS;
+      if (s.status === 'running' && Date.now() - Date.parse(s.lastAt) > window) s.status = 'idle';
+      next[file] = cache[file]; sessions.push(s); return;
+    }
+    try {
+      const { head, tail } = await readSlices(file, st.size);
+      let summary;
+      if (kind === 'claude') {
+        summary = summarizeClaude(parseLines(head).concat(parseLines(tail)), file);
+      } else {
+        const meta = JSON.parse(await readFirstLine(file));
+        summary = summarizeCodex(meta, parseLines(head).filter((r) => r.type !== 'session_meta').concat(parseLines(tail)), file, names);
+      }
+      summary.lastAt = summary.lastAt || st.mtime.toISOString();
+      next[file] = { key, summary };
+      sessions.push(summary);
+    } catch (e) {
+      errors.push({ file, error: String(e.message || e).slice(0, 160) });
+    }
+  };
+  const queue = [...claude.files.map((f) => [f, 'claude']), ...codex.files.map((f) => [f, 'codex'])];
+  await Promise.all(Array.from({ length: 8 }, async () => { while (queue.length) { const [f, k] = queue.shift(); await handle(f, k); } }));
+  // Codex subagent threads point at their parent; drop the parent's title onto them.
+  return {
+    sessions, cache: next, errors,
+    runtimes: { claude: { available: claude.available, root: claude.root, files: claude.files.length }, codex: { available: codex.available, root: codex.root, files: codex.files.length } },
+    scannedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Attribute a session to a project. cwd inside an approved checkout is direct path evidence.
+ * Otherwise, if the files it touched fall overwhelmingly inside one project's checkouts, the link is
+ * marked as inferred. Anything else stays unresolved; Cereal never guesses.
+ */
+export function attribute(session, projectRoots) {
+  for (const [pid, roots] of Object.entries(projectRoots)) {
+    if (session.cwd && roots.some((r) => isInside(session.cwd, r))) {
+      return { projectId: pid, basis: 'cwd', confidence: 'verified-path', evidence: `Session working directory ${session.cwd} is inside an approved ${pid} checkout` };
+    }
+  }
+  const counts = {};
+  let total = 0;
+  for (const ref of session.pathRefs || []) {
+    for (const [pid, roots] of Object.entries(projectRoots)) {
+      if (roots.some((r) => isInside(ref, r))) { counts[pid] = (counts[pid] || 0) + 1; total++; break; }
+    }
+  }
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (ranked.length && ranked[0][1] >= 3 && ranked[0][1] / total >= 0.8) {
+    return { projectId: ranked[0][0], basis: 'paths', confidence: 'inferred', evidence: `${ranked[0][1]} of ${total} file and command paths in this session point into ${ranked[0][0]}` };
+  }
+  if (ranked.length) return { projectId: null, basis: 'ambiguous', confidence: 'unresolved', evidence: `Paths split across ${ranked.map(([p, n]) => `${p} (${n})`).join(', ')}`, candidates: ranked.map(([p]) => p) };
+  return { projectId: null, basis: 'none', confidence: 'unresolved', evidence: 'No path evidence links this session to an approved project' };
+}
