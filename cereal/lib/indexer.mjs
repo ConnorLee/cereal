@@ -1,3 +1,4 @@
+import { NOT_PROSE } from './edition.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -65,10 +66,13 @@ export function extractSignals(text) {
   // Market notes for the morning edition: sizing (TAM/SAM/SOM, market size) and timing ("why now").
   const market = [];
   for (let i = 0; i < lines.length && market.length < 4; i++) {
-    const t = clean(lines[i].replace(/^\s*(#{1,6}|[-*]|\d+\.)\s+/, ''));
+    const raw = lines[i];
+    // Tables, code and file references are working notes, not things the doc says about the market.
+    if (/^\s*(```|    |\t)/.test(raw) || NOT_PROSE.test(raw)) continue;
+    const t = clean(raw.replace(/^\s*(#{1,6}|[-*]|\d+\.)\s+/, ''));
     if (t.length < 24 || t.length > 400) continue;
-    const kind = /\bwhy now\b|\btailwinds?\b|\btiming\b|\bthe moment\b/i.test(t) ? 'whynow'
-      : /\b(TAM|SAM|SOM)\b|total addressable|addressable market|market size|market sizing|market opportunity/i.test(t) ? 'market' : null;
+    const kind = /\bwhy now\b|\btailwinds?\b|\bmarket timing\b/i.test(t) ? 'whynow'
+      : /\b(TAM|SAM|SOM)\b|total addressable|addressable market|market size|market sizing|market opportunity|\bcompetitors?\b|\bincumbents?\b/i.test(t) ? 'market' : null;
     if (kind) market.push({ text: t.slice(0, 260), line: i + 1, kind });
   }
   // Dated commitments for the morning briefing: a deadline, due, ship or launch line with a real date in it.

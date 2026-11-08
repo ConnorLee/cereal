@@ -286,6 +286,7 @@ async function renderPortfolio() {
   const ordered = [...st.projects].sort((a, b) => urgency(b) - urgency(a));
   const waiting = st.projects.filter((p) => p.needs?.reviews || p.needs?.risks || p.questions?.length).length;
   const [edition, briefing] = await Promise.all([api('/api/edition').catch(() => null), api('/api/briefing').catch(() => null)]);
+  if (edition?.newsLoading) setTimeout(() => refreshEdition(), 3000);
   S.portfolioPainted = true;
   view.innerHTML = `
   <section class="home">
@@ -311,7 +312,7 @@ function editionHtml(ed) {
     <p class="edition-mast"><span>Morning edition</span><span>${esc(today)}</span></p>
     <div class="edition-body">
       <h1 class="edition-lede">${esc(ed.text)}</h1>
-      <div class="dispatches">${ed.dispatches.map(dispatchHtml).join('')}</div>
+      <div class="dispatches">${ed.dispatches.map((d) => dispatchHtml({ ...d, newsEnabled: ed.newsEnabled, newsLoading: ed.newsLoading })).join('')}</div>
       <button type="button" class="btn quiet edition-done" data-act="edition-done">Done reading</button>
     </div>
     <button type="button" class="edition-reopen" data-act="edition-open">You’ve read today’s edition. Read it again</button>
@@ -324,12 +325,36 @@ function edItems(items, empty) {
     ${i.detail ? `<p class="ed-detail">${esc(String(i.detail).slice(0, 220))}</p>` : ''}
     ${i.src ? `<p class="ed-src">${sourceLabel({ ...i.src, label: tild(i.src.label || '').slice(0, 72) })}</p>` : ''}</li>`).join('')}</ul>`;
 }
+// This week's news on what the project is building (searched by topic words only), then what its own docs say.
+function marketHtml(d) {
+  const topics = (d.newsTopics || []).map((t) => `“${esc(t)}”`).join(', ');
+  const change = '<a class="ed-more" href="#/briefing">Change topics</a>';
+  let news;
+  if (!d.newsTopics?.length) news = `<p class="ed-empty">Give ${esc(d.name)} a one-line tagline and Cereal will follow the news on what it’s building.</p>`;
+  else if (!d.newsEnabled) news = `<div class="ed-news-off"><p>See this week’s news on ${topics}. Only those words are searched; nothing from ${esc(d.name)}’s files leaves your Mac.</p><p><button type="button" class="btn quiet" data-act="edition-news-on">Turn on news</button> ${change}</p></div>`;
+  else if (d.newsLoading) news = `<p class="ed-empty">Looking for this week’s news on ${topics}…</p>`;
+  else if (!d.news?.length) news = `<p class="ed-empty">No news this week on ${topics}. ${change}</p>`;
+  else news = `<ul class="ed-list ed-news">${d.news.map((n) => `<li><a class="ed-news-link" href="${esc(n.url)}" target="_blank" rel="noopener"><span class="ed-tag ed-intheNews">In the news</span>${esc(n.title)}</a>
+    <p class="ed-src">${esc([n.source, n.at ? ago(n.at) : '', n.topic ? `on “${n.topic}”` : ''].filter(Boolean).join(' · '))}</p></li>`).join('')}</ul>`;
+  const notes = d.market?.length ? `<p class="ed-sub">From ${esc(d.name)}’s documents</p>${edItems(d.market, '')}` : '';
+  return news + notes;
+}
+// News is searched in the background; the edition fills in when it's ready.
+async function refreshEdition(tries = 0) {
+  if (S.route.name !== 'portfolio' || !$('#edition')) return;
+  const ed = await api('/api/edition').catch(() => null);
+  if (!ed || S.route.name !== 'portfolio' || !$('#edition')) return;
+  if (ed.newsLoading) { if (tries < 15) setTimeout(() => refreshEdition(tries + 1), 3000); return; }
+  const open = [...document.querySelectorAll('#edition details')].map((x) => x.open);
+  $('#edition').outerHTML = editionHtml(ed);
+  document.querySelectorAll('#edition details').forEach((x, i) => { if (open[i] != null) x.open = open[i]; });
+}
 function dispatchHtml(d) {
   return `<article class="dispatch" style="${brandVars(d.brand)}" data-project="${d.projectId}">
     <p class="dispatch-kicker">${d.iconUrl ? `<img class="dispatch-icon" src="${esc(d.iconUrl)}" alt="">` : ''}${nameMark(d)}</p>
     <h2 class="dispatch-head"${d.headline.src ? ` data-src="${enc(d.headline.src)}" tabindex="0"` : ''}>${esc(d.headline.text)}</h2>
     <p class="dispatch-deck">${esc(d.deck)}</p>
-    ${fold('Market and why now', edItems(d.market, `No market notes in ${d.name}’s documents yet. Mention TAM or “why now” in any doc and it shows up here.`), false, 'ed-fold')}
+    ${fold('Market and why now', marketHtml(d), true, 'ed-fold')}
     ${fold('What’s new in the product', edItems(d.product, `Nothing shipped ${d.span}.`), false, 'ed-fold')}
     ${fold('How it got here', edItems(d.process, 'No decisions or branches recorded yet.'), false, 'ed-fold')}
   </article>`;
@@ -1318,6 +1343,11 @@ document.addEventListener('click', async (ev) => {
   if (act === 'close-drawer') return closeDrawer();
   if (act === 'close-sw') return closeSwitcher();
   if (act === 'retry') return S.retry?.();
+  if (act === 'edition-news-on') {
+    t.disabled = true;
+    try { await post('/api/briefing/settings', { news: { enabled: true } }); } catch (e) { t.disabled = false; return alert(e.message); }
+    return refreshEdition();
+  }
   if (act === 'edition-done') { localStorage.setItem('cereal-edition-read', dayKey()); $('#edition')?.classList.add('is-read'); window.scrollTo({ top: 0 }); return; }
   if (act === 'edition-open') { localStorage.removeItem('cereal-edition-read'); $('#edition')?.classList.remove('is-read'); return; }
   if (act === 'pick-new') {

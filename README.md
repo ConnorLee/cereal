@@ -4,7 +4,7 @@
 approve (documents, Git, Claude Code and Codex sessions), tells you where you left off and what changed,
 switches between projects with ⌘K, and emails you a morning briefing.
 
-- **Try it:** https://cereal-demo.asyncly.app — the homepage, a download for Mac, and a demo with three
+- **Try it:** https://cereal.work — the homepage, a download for Mac, and a demo with three
   sample projects at `/demo.html`. No sign-up; the demo uses fictional data only.
 - **Get the Mac app:** [Cereal.dmg](https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg). Drag it to Applications, open it, and drag your project
   folders onto it. Apple silicon, macOS 13 or later; nothing else to install.

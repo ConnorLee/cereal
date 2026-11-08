@@ -451,6 +451,12 @@ pre.code .cl.hl { background: rgba(249, 226, 175, 0.16); box-shadow: none; }
 .ed-text .prov { margin-right: 6px; font-size: 13px; }
 .ed-tag { font-size: 13px; font-weight: 500; margin-right: 6px; }
 .ed-market { color: #1E66F5; } .ed-whynow { color: #8839EF; }
+.ed-intheNews { color: #D2691E; }
+.ed-news-link { color: inherit; text-decoration: none; font-size: 15px; line-height: 1.45; }
+.ed-news-link:hover { text-decoration: underline; text-decoration-color: var(--rule-2); text-underline-offset: 3px; }
+.ed-news-off p { margin: 0 0 10px; font-size: 14px; color: var(--ink-2); }
+.ed-more { font-size: 14px; color: var(--ink-2); margin-left: 8px; }
+.ed-sub { margin: 10px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--quiet); }
 .ed-detail { margin: 2px 0 0; font-size: 14px; font-weight: 300; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ed-src { margin: 4px 0 0; font-size: 12.5px; color: var(--quiet); }
 .ed-empty { margin: 0 0 10px; font-size: 14px; color: var(--quiet); }

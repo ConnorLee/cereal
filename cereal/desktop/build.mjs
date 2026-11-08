@@ -2,9 +2,10 @@
 //
 //   npm run desktop                    builds desktop/dist/Cereal.app and desktop/dist/Cereal.dmg
 //   NODE_BIN=/path/to/node npm run desktop   bundle a specific Node 22+ binary (default: the one running this)
+//   CEREAL_DESKTOP_OUT=/some/dir npm run desktop   build somewhere else (rebuilding under a running copy stops it)
 //
 // Needs Xcode's command-line tools (swiftc). The app is signed ad hoc: without a Developer ID it isn't
-// notarized, so the first launch is right-click → Open. Set CODESIGN_IDENTITY to sign with your own.
+// notarized, so the first launch needs Open Anyway in System Settings › Privacy & Security. Set CODESIGN_IDENTITY to sign with your own.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CEREAL = path.dirname(HERE);
-const DIST = path.join(HERE, 'dist');
+const DIST = process.env.CEREAL_DESKTOP_OUT ? path.resolve(process.env.CEREAL_DESKTOP_OUT) : path.join(HERE, 'dist');
 const APP = path.join(DIST, 'Cereal.app');
 const C = path.join(APP, 'Contents');
 const pkg = JSON.parse(fs.readFileSync(path.join(CEREAL, 'package.json'), 'utf8'));
@@ -78,17 +79,19 @@ fs.chmodSync(path.join(C, 'Resources', 'node', 'node'), 0o755);
 const nodeLicense = path.join(path.dirname(path.dirname(NODE)), 'LICENSE');
 if (fs.existsSync(nodeLicense)) fs.copyFileSync(nodeLicense, path.join(C, 'Resources', 'node', 'LICENSE'));
 
-// 5. The icon, from the cereal-box emblem.
+// 5. The icon: the cereal-box emblem drawn on Apple's icon grid (see icon.swift), so it's Dock-sized.
 const iconset = path.join(os.tmpdir(), `cereal-${process.pid}.iconset`);
 fs.rmSync(iconset, { recursive: true, force: true });
 fs.mkdirSync(iconset);
-const src = path.join(CEREAL, 'public', 'brand', 'cereal-icon-512.png');
+const src = path.join(os.tmpdir(), `cereal-${process.pid}-icon.png`);
+run('xcrun', ['swift', path.join(HERE, 'icon.swift'), path.join(HERE, 'icon-art.png'), src]);
 for (const s of [16, 32, 128, 256, 512]) {
   run('sips', ['-z', String(s), String(s), src, '--out', path.join(iconset, `icon_${s}x${s}.png`)]);
   run('sips', ['-z', String(s * 2), String(s * 2), src, '--out', path.join(iconset, `icon_${s}x${s}@2x.png`)]);
 }
 run('iconutil', ['-c', 'icns', iconset, '-o', path.join(C, 'Resources', 'Cereal.icns')]);
 fs.rmSync(iconset, { recursive: true, force: true });
+fs.rmSync(src, { force: true });
 
 // 6. Sign: Node first, then the app around it.
 run('codesign', ['--force', '--sign', IDENTITY, path.join(C, 'Resources', 'node', 'node')]);

@@ -5,6 +5,9 @@ const docSrc = (d, line) => ({ type: 'doc', docId: d.id, path: d.path, line: lin
 const commitSrc = (repo, c) => ({ type: 'commit', repo, sha: c.sha, label: `${c.short} · ${c.subject}`.slice(0, 90) });
 const sessionSrc = (s) => ({ type: 'session', tool: s.tool, id: s.id, label: `${s.tool === 'codex' ? 'Codex' : 'Claude Code'} · ${s.title || s.id.slice(0, 8)}` });
 const toolName = (s) => (s.tool === 'codex' ? 'Codex' : 'Claude');
+// A real market note, not a table row, code reference or a stray "timing" in engineering notes.
+export const NOT_PROSE = /^\s*\||\|\s*$|`|\]\(|\b[A-Z][a-z]+[A-Z]\w*\.\w+|\b\w+\.\w+\.\w+|\b[\w-]+\.(md|ts|js|mjs|swift|json)\b/;
+const marketNote = (m) => !NOT_PROSE.test(m.text) && (m.kind === 'market' || /\bwhy now\b|\btailwinds?\b|\bmarket timing\b/i.test(m.text));
 const lower = (t) => String(t || '').replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
 
 export function buildDispatch({ def, capsule, index, now = Date.now() }) {
@@ -42,9 +45,9 @@ export function buildDispatch({ def, capsule, index, now = Date.now() }) {
     open ? `Still waiting on your call: ${lower(open.text.replace(/^([A-Z]{1,8}[-\d]*\d+)\s*[—–-]\s*/, ''))}.` : '',
   ].filter(Boolean).join(' ');
 
-  // Market and why now: lines the project's own documents say about its market.
+  // Market and why now: lines the project's own documents say about its market (news is added by the server).
   const market = [];
-  for (const d of docs) for (const m of d.market || []) if (market.length < 6) market.push({ text: m.text, kind: m.kind, src: docSrc(d, m.line) });
+  for (const d of docs) for (const m of d.market || []) if (market.length < 4 && marketNote(m)) market.push({ text: m.text, kind: m.kind, src: docSrc(d, m.line) });
   market.sort((a, b) => (a.kind === 'market' ? 0 : 1) - (b.kind === 'market' ? 0 : 1));
 
   // What's new in the product: commits and agent results in the window.

@@ -10,8 +10,13 @@
 <meta property="og:site_name" content="Cereal">
 <meta property="og:title" content="Cereal — daily reports for serial entrepreneurs">
 <meta property="og:description" content="A local-first home for the projects you’re juggling. It remembers where you left off and emails you what moved each morning.">
-<meta property="og:image" content="https://cereal-demo.asyncly.app/brand/cereal-icon-512.png">
-<meta name="twitter:card" content="summary">
+<meta property="og:url" content="https://cereal.work/">
+<meta property="og:image" content="https://cereal.work/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="675">
+<meta property="og:image:alt" content="Cereal: private, daily project briefs. Your projects organized, a focused brief each morning, private on your Mac.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://cereal.work/og.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="brand/cereal-icon-32.png">
 <link rel="apple-touch-icon" href="brand/cereal-icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -180,8 +185,18 @@
   .promises li { display: inline-flex; align-items: center; gap: 7px; }
   .promises li::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .5; }
   .promises a { color: inherit; }
-  footer { max-width: 920px; margin: 34px auto 0; padding: 18px 0 34px; border-top: 1px solid rgb(255 255 255 / 0.35); display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; font-size: 12px; color: var(--ink-2); opacity: .7; }
+  /* The last word: the app itself, and one way to get it. */
+  .get { display: grid; justify-items: center; text-align: center; max-width: 920px; margin: 64px auto 0; padding: 0 24px; }
+  .get-icon { display: block; width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 18px 40px rgb(110 70 0 / 0.28), 0 2px 6px rgb(60 40 0 / 0.22); transition: transform 220ms cubic-bezier(.2,.8,.2,1); }
+  .get-icon:hover { transform: translateY(-3px) rotate(-2deg); }
+  .get-title { margin: 22px 0 20px; font: 800 clamp(26px, 3.2vw, 36px)/1.1 var(--round); letter-spacing: -0.025em; color: var(--ink); }
+  .get .meta { margin-top: 14px; }
+  footer { max-width: 920px; margin: 56px auto 0; padding: 18px 0 34px; border-top: 1px solid rgb(255 255 255 / 0.35); display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px 24px; align-items: center; font-size: 12px; color: var(--ink-2); }
+  footer > span { opacity: .7; }
+  footer > :last-child { justify-self: end; }
   footer a { color: inherit; }
+  footer .made { justify-self: center; opacity: 1; font-weight: 600; color: var(--ink); text-decoration: none; }
+  footer .made:hover { text-decoration: underline; text-underline-offset: 3px; }
 
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; gap: 8px; padding-top: 34px; }
@@ -212,6 +227,8 @@
     .overlay { padding-top: 16px; }
     .steps { grid-template-columns: 1fr; gap: 8px; }
     .promises { justify-content: flex-start; flex-direction: column; gap: 6px; }
+    footer { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+    footer > :last-child { justify-self: center; }
   }
 </style>
 </head>
@@ -334,8 +351,18 @@
       <li><a href="demo.html">Look at the demo first</a></li>
     </ul>
   </section>
+  <section class="get" aria-label="Download Cereal for Mac">
+    <a href="https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg" aria-label="Download Cereal for Mac"><img class="get-icon" src="brand/cereal-icon-512.png" width="112" height="112" alt="Cereal app icon"></a>
+    <h2 class="get-title">Get Cereal for Mac</h2>
+    <a class="button" href="https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M2.5 11.5v1A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download for Mac
+    </a>
+    <p class="meta">Free · Mac with Apple silicon · macOS 13 or later</p>
+  </section>
   <footer>
     <span>Made for people making things.</span>
+    <a class="made" href="https://ap3.gallery" target="_blank" rel="noopener">Made with &lt;3 by AP3</a>
     <span>No account. No cloud. No telemetry.</span>
   </footer>
 </div>

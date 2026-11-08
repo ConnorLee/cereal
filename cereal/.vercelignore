@@ -1,0 +1,9 @@
+# cereal.work is the static site in demo/. Everything else is the Mac app's local server, which reads your
+# folders and must never run as a cloud function.
+server.mjs
+lib/
+scripts/
+test/
+desktop/
+public/
+projects.example.json

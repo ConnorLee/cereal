@@ -10,6 +10,7 @@ import { showCommit } from './lib/git.mjs';
 import { isSecretPath, containsSecret } from './lib/safety.mjs';
 import { tildify } from './lib/paths.mjs';
 import { outlineSummary, claudeSummary } from './lib/summary.mjs';
+import { gatherNews } from './lib/news.mjs';
 import { BriefingStore, mailerFor, saveMailConfig, clearMailConfig, briefingStatus, applySettings, composeBriefing, deliver, startVerification, briefingInputs, briefingNews, newsTopics, confirmVerification, checkToken } from './lib/briefing-delivery.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -58,7 +59,31 @@ route('GET', '/api/state', async () => ({
   claude: !!process.env.ANTHROPIC_API_KEY,
 }));
 
-route('GET', '/api/edition', async () => engine.edition());
+// The edition, with this week's news on each project's topics when the reader turned news on (only the topic
+// words leave the Mac). Searching takes a few seconds, so it runs in the background, once a day per topic list;
+// the page asks again while `newsLoading` is set.
+const editionNews = { key: '', byId: null, job: null };
+route('GET', '/api/edition', async () => {
+  const ed = engine.edition();
+  const data = briefings.read();
+  const s = data.settings;
+  const inputs = ed.dispatches.map((d) => ({ def: engine.defs.find((x) => x.id === d.projectId), capsule: engine.capsule(d.projectId), index: engine.store.project(d.projectId).index }));
+  const topics = inputs.map((p) => ({ id: p.def.id, topics: newsTopics(s, p) }));
+  for (const d of ed.dispatches) d.newsTopics = topics.find((t) => t.id === d.projectId)?.topics || [];
+  ed.newsEnabled = !!s.news?.enabled;
+  if (!ed.newsEnabled) return ed;
+  const key = `${new Date().toLocaleDateString('en-CA')}|${JSON.stringify(topics)}`;
+  if (editionNews.key !== key && !editionNews.job) {
+    const cache = { ...(data.newsCache || {}) };
+    editionNews.job = gatherNews(topics, { cache, limit: 4 })
+      .then((byId) => { Object.assign(editionNews, { key, byId }); briefings.update((x) => { x.newsCache = cache; }); })
+      .catch(() => { Object.assign(editionNews, { key, byId: {} }); })
+      .finally(() => { editionNews.job = null; });
+  }
+  ed.newsLoading = editionNews.key !== key;
+  for (const d of ed.dispatches) d.news = ed.newsLoading ? [] : editionNews.byId?.[d.projectId]?.items || [];
+  return ed;
+});
 route('GET', '/api/projects/:id/discovery', async ({ id }) => store.project(engine.def(id).id).discovery || engine.discover(id));
 route('POST', '/api/projects/:id/discover', async ({ id }) => engine.discover(id));
 

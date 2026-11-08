@@ -54,11 +54,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var ready = false
     var quitting = false
     var queuedFolders: [URL] = []
+    var pendingHash: String?
+    var portFixed = false
+    var restarts = 0
+    var serverStartedAt = Date()
+    var lockFD: Int32 = -1
+    var lockDir = ""
+    var logPath = "~/Library/Logs/Cereal/server.log"
+    var picking: NSOpenPanel?
     var briefingLine = "Morning briefing: checking…"
+    weak var briefingItem: NSMenuItem?
+    var briefingTimer: Timer?
     var base: String { "http://127.0.0.1:\(port)" }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         parseArguments()
+        guard claimSingleInstance() else { return }
         buildMainMenu()
         buildStatusItem()
         buildWindow()
@@ -69,9 +80,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func parseArguments() {
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--data-dir"), i + 1 < args.count { dataDir = args[i + 1] }
-        if let i = args.firstIndex(of: "--port"), i + 1 < args.count, let p = Int(args[i + 1]) { port = p }
+        if let i = args.firstIndex(of: "--port"), i + 1 < args.count, let p = Int(args[i + 1]) { port = p; portFixed = true }
         else { port = Self.freePort(from: 4320) }
     }
+
+    // One Cereal per data folder. A second copy (say, one opened from the disk image while another runs from
+    // Applications) would write the same files, so it asks the running one to show its window, then quits.
+    // It only sends a message: launching anything here could start a third copy.
+    func claimSingleInstance() -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dir = dataDir.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) } ?? home.appendingPathComponent("Library/Application Support/Cereal")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fd = open(dir.appendingPathComponent("desktop.lock").path, O_RDWR | O_CREAT, 0o644)
+        lockDir = dir.standardizedFileURL.path
+        if fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 {
+            lockFD = fd
+            DistributedNotificationCenter.default().addObserver(forName: Self.showNote, object: lockDir, queue: .main) { [weak self] _ in self?.showWindow() }
+            return true
+        }
+        if fd >= 0 { Darwin.close(fd) }
+        DistributedNotificationCenter.default().postNotificationName(Self.showNote, object: lockDir, userInfo: nil, deliverImmediately: true)
+        NSApp.terminate(nil)
+        return false
+    }
+
+    static let showNote = Notification.Name("app.cereal.desktop.show")
 
     static func freePort(from start: Int) -> Int {
         for p in start..<(start + 40) {
@@ -93,9 +126,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let res = Bundle.main.resourceURL!
         let node = res.appendingPathComponent("node/node")
         let app = res.appendingPathComponent("app")
-        let logDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Cereal")
+        // A copy with its own data folder (--data-dir) keeps its log there too, apart from everyday Cereal's.
+        let logDir = dataDir.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) } ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Cereal")
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logURL = logDir.appendingPathComponent("server.log")
+        logPath = (logURL.path as NSString).abbreviatingWithTildeInPath
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         let log = try? FileHandle(forWritingTo: logURL)
 
@@ -111,15 +146,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         p.environment = env
         p.standardOutput = log
         p.standardError = log
+        // If the engine stops on its own, start it again (a few times, on a free port), keeping the page you were on.
         p.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
                 guard let self, !self.quitting else { return }
                 self.ready = false
-                self.showProblem("Cereal’s engine stopped (exit \(proc.terminationStatus)). The log is in ~/Library/Logs/Cereal/server.log.")
+                if Date().timeIntervalSince(self.serverStartedAt) > 60 { self.restarts = 0 }
+                NSLog("Cereal engine exited (%d); restarts so far: %d", proc.terminationStatus, self.restarts)
+                if self.restarts < 3 {
+                    self.restarts += 1
+                    if let url = self.web.url, url.host == "127.0.0.1", let f = url.fragment, self.pendingHash == nil { self.pendingHash = "#" + f }
+                    if !self.portFixed { self.port = Self.freePort(from: 4320) }
+                    self.startServer()
+                } else {
+                    self.showProblem("Cereal’s engine stopped (exit \(proc.terminationStatus)). The log is in \(self.logPath).")
+                }
             }
         }
         do { try p.run() } catch { showProblem("Cereal couldn’t start its engine: \(error.localizedDescription)"); return }
         server = p
+        serverStartedAt = Date()
         waitForServer(attempt: 0)
     }
 
@@ -131,21 +177,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 guard let self else { return }
                 if (resp as? HTTPURLResponse)?.statusCode == 200 {
                     self.ready = true
-                    self.web.load(URLRequest(url: URL(string: self.base)!))
+                    self.web.load(URLRequest(url: URL(string: self.base + "/" + (self.pendingHash ?? ""))!))
+                    self.pendingHash = nil
+                    self.refreshBriefingLine()
+                    if self.briefingTimer == nil {
+                        self.briefingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in self?.refreshBriefingLine() }
+                    }
                     let queued = self.queuedFolders
                     self.queuedFolders = []
                     if !queued.isEmpty { self.addFolders(queued) }
                 } else if attempt < 60 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.waitForServer(attempt: attempt + 1) }
                 } else {
-                    self.showProblem("Cereal’s engine didn’t answer. The log is in ~/Library/Logs/Cereal/server.log.")
+                    self.showProblem("Cereal’s engine didn’t answer. The log is in \(self.logPath).")
                 }
             }
         }.resume()
     }
 
     func showProblem(_ message: String) {
-        let html = "<body style='font:17px -apple-system;padding:64px;color:#17161B;background:#FBFBFC'><p style='font-size:24px;font-weight:600'>cereal<span style='color:#6E5FE8'>.</span></p><p>\(message)</p><p style='color:#8B8993'>Quit and open Cereal again to retry.</p></body>"
+        let html = "<body style='font:17px -apple-system;padding:64px;color:#17161B;background:#FBFBFC'><p style='font-size:24px;font-weight:600'>cereal<span style='color:#6E5FE8'>.</span></p><p>\(message)</p><p><button onclick=\"window.webkit.messageHandlers.cereal.postMessage({type:'retry'})\" style='font:15px -apple-system;padding:8px 16px;border-radius:8px;border:1px solid #D9D8DE;background:#fff'>Try again</button></p></body>"
         web.loadHTMLString(html, baseURL: nil)
         showWindow()
     }
@@ -154,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func application(_ sender: NSApplication, open urls: [URL]) {
         let dirs = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-        guard !dirs.isEmpty else { return }
+        guard !dirs.isEmpty, window != nil else { return }
         showWindow()
         if ready { addFolders(dirs) } else { queuedFolders += dirs }
     }
@@ -195,6 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func go(_ hash: String) {
         showWindow()
+        guard ready else { pendingHash = hash; return }
         web.evaluateJavaScript("location.hash = \(jsString(hash))")
     }
 
@@ -206,7 +258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         panel.prompt = "Give Cereal Access"
         panel.message = "Choose a project folder. Cereal shows you what it finds and reads nothing until you approve it."
         NSApp.activate(ignoringOtherApps: true)
-        panel.begin { then($0 == .OK ? panel.urls : []) }
+        picking = panel
+        panel.begin { [weak self] in self?.picking = nil; then($0 == .OK ? panel.urls : []) }
     }
 
     @objc func addProjectFromMenu() {
@@ -215,7 +268,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // The page asks for the native folder dialog through this bridge (window.cerealNative.pickFolder()).
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], body["type"] as? String == "pickFolder" else { return }
+        guard let body = message.body as? [String: Any] else { return }
+        if body["type"] as? String == "retry", server?.isRunning != true {
+            restarts = 0
+            if !portFixed { port = Self.freePort(from: 4320) }
+            web.loadHTMLString("<body style='background:#FBFBFC;font:15px -apple-system;color:#8B8993;display:grid;place-items:center;height:100vh;margin:0'>Waking Cereal up…</body>", baseURL: nil)
+            return startServer()
+        }
+        guard body["type"] as? String == "pickFolder" else { return }
+        if let open = picking { open.makeKeyAndOrderFront(nil); return }
         chooseFolders(multiple: false) { [weak self] urls in
             let result: [String: Any] = urls.first.map { ["path": $0.path] } ?? ["cancelled": true]
             let json = String(data: try! JSONSerialization.data(withJSONObject: result), encoding: .utf8)!
@@ -230,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let bridge = """
         window.cerealNative = {
           version: \(jsString(appVersion)),
-          pickFolder() { return new Promise((resolve) => { window.__cerealPicked = (r) => { window.__cerealPicked = null; resolve(r); }; window.webkit.messageHandlers.cereal.postMessage({ type: 'pickFolder' }); }); }
+          pickFolder() { if (window.__cerealPicked) window.__cerealPicked({ cancelled: true }); return new Promise((resolve) => { window.__cerealPicked = (r) => { window.__cerealPicked = null; resolve(r); }; window.webkit.messageHandlers.cereal.postMessage({ type: 'pickFolder' }); }); }
         };
         """
         config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -257,6 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc func showWindow() {
+        guard window != nil else { return }
         NSApp.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -267,15 +329,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
 
+    // Quit stops the engine; if it hasn't stopped after three seconds, it's stopped for good.
     func applicationWillTerminate(_ notification: Notification) {
         quitting = true
-        server?.terminate()
-        server?.waitUntilExit()
+        guard let server, server.isRunning else { return }
+        server.terminate()
+        let deadline = Date().addingTimeInterval(3)
+        while server.isRunning && Date() < deadline { usleep(50_000) }
+        if server.isRunning { kill(server.processIdentifier, SIGKILL) }
     }
 
-    // Links to anywhere but Cereal itself (news, docs, mail) open in the default browser.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Add a Project Folder…", action: #selector(addProjectFromMenu), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Morning Briefing", action: #selector(openBriefing), keyEquivalent: "").target = self
+        return menu
+    }
+
+    // Pages anywhere but Cereal itself (news, docs, mail) open in the default browser, never in Cereal's window.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if let url = action.request.url, let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != "127.0.0.1", action.navigationType == .linkActivated {
+        let mainFrame = action.targetFrame?.isMainFrame ?? true
+        if let url = action.request.url, let scheme = url.scheme, ["http", "https", "mailto"].contains(scheme), !["127.0.0.1", "localhost"].contains(url.host ?? ""), mainFrame || action.navigationType == .linkActivated {
             NSWorkspace.shared.open(url)
             return decisionHandler(.cancel)
         }
@@ -284,6 +358,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url { NSWorkspace.shared.open(url) }
         return nil
+    }
+    // If the page's process dies (memory pressure, a WebKit crash), bring it back instead of leaving a blank window.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if ready { web.load(URLRequest(url: URL(string: base + "/" + (web.url?.fragment.map { "#" + $0 } ?? ""))!)) }
     }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = NSAlert(); alert.messageText = message; alert.runModal(); completionHandler()
@@ -316,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             item("Paste", #selector(NSText.paste(_:)), "v"), item("Select All", #selector(NSText.selectAll(_:)), "a"),
         ])
         submenu("View", [item("Reload", #selector(reload), "r"), item("Home", #selector(goHome), "1")])
-        submenu("Window", [item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"), item("Close", #selector(NSWindow.performClose(_:)), "w")])
+        submenu("Window", [item("Cereal", #selector(showWindow), "0"), .separator(), item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"), item("Close", #selector(NSWindow.performClose(_:)), "w")])
         NSApp.mainMenu = main
     }
 
@@ -336,6 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(.separator())
         let info = menu.addItem(withTitle: briefingLine, action: nil, keyEquivalent: "")
         info.isEnabled = false
+        briefingItem = info
         _ = add("Morning Briefing Settings…", #selector(openBriefing))
         let login = add("Open at Login", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -358,7 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     let f = DateFormatter(); f.dateFormat = "EEE h:mm a"; line = "Next briefing: \(f.string(from: date))"
                 }
             }
-            DispatchQueue.main.async { self.briefingLine = line }
+            DispatchQueue.main.async { self.briefingLine = line; self.briefingItem?.title = line }
         }.resume()
     }
 

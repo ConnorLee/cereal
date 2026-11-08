@@ -185,6 +185,13 @@ try {
   const { gatherNews, suggestTopics } = await import('../lib/news.mjs');
   let news = null;
   try { news = await gatherNews(inputs.map((p) => ({ id: p.def.id, topics: suggestTopics(p) })), { now: NOW }); } catch (e) { console.warn('news skipped:', e.message); }
+  // The edition's "Market and why now" shows the same headlines, as the app does with news on.
+  data.edition.newsEnabled = true;
+  for (const d of data.edition.dispatches) {
+    const p = inputs.find((x) => x.def.id === d.projectId);
+    d.newsTopics = p ? suggestTopics(p) : [];
+    d.news = news?.[d.projectId]?.items || [];
+  }
   const compose = (id, projects, previous, now, withNews = null) => {
     const table = {};
     const link = (projectId, src) => { const n = Object.keys(table).length + 1; table[n] = { projectId, src }; return `#/briefing/open/${id}/${n}`; };
@@ -236,11 +243,12 @@ const html = fs.readFileSync(path.join(CEREAL, 'public', 'index.html'), 'utf8')
   .replace('href="/style.css"', 'href="style.css"')
   .replace('href="/ui.css"', 'href="ui.css"')
   .replace('<script type="module" src="/app.js"></script>', '<script src="demo-data.js"></script>\n  <script src="demo-shim.js"></script>\n  <script type="module" src="app.js"></script>')
-  .replace('<title>Cereal</title>', `<title>Cereal — demo</title>\n  <meta name="description" content="Try Cereal with three sample projects: where you left off, what changed, and a morning briefing. No sign-up.">\n  <meta property="og:type" content="website">\n  <meta property="og:title" content="Cereal — try the demo">\n  <meta property="og:description" content="Three sample projects: pick up where you left off, switch with ⌘K, and read the morning briefing. No sign-up.">\n  <meta property="og:image" content="https://cereal-demo.asyncly.app/brand/cereal-icon-512.png">\n  <meta name="twitter:card" content="summary">`);
+  .replace('<title>Cereal</title>', `<title>Cereal — demo</title>\n  <meta name="description" content="Try Cereal with three sample projects: where you left off, what changed, and a morning briefing. No sign-up.">\n  <meta property="og:type" content="website">\n  <meta property="og:title" content="Cereal — try the demo">\n  <meta property="og:description" content="Three sample projects: pick up where you left off, switch with ⌘K, and read the morning briefing. No sign-up.">\n  <meta property="og:image" content="https://cereal.work/og.jpg">\n  <meta property="og:image:width" content="1200">\n  <meta property="og:image:height" content="675">\n  <meta name="twitter:card" content="summary_large_image">\n  <meta name="twitter:image" content="https://cereal.work/og.jpg">`);
 // The Get Cereal page is the site's home; the demo lives one click away at demo.html.
 fs.writeFileSync(path.join(OUT, 'demo.html'), html);
 fs.copyFileSync(path.join(HERE, 'get-cereal.html'), path.join(OUT, 'index.html'));
 fs.copyFileSync(path.join(HERE, 'get-cereal.html'), path.join(OUT, 'get.html'));
+fs.copyFileSync(path.join(HERE, 'og.jpg'), path.join(OUT, 'og.jpg'));
 fs.cpSync(path.join(CEREAL, 'public', 'brand'), path.join(OUT, 'brand'), { recursive: true });
 // The homepage's animation library, vendored so the site loads nothing from elsewhere.
 fs.mkdirSync(path.join(OUT, 'vendor'), { recursive: true });
