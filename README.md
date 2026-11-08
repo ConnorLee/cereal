@@ -1,4 +1,4 @@
-# Hackathon #1 — Cereal
+# Cereal: A Reader for Your Projects
 
 **Cereal** is a local-first home for the projects you're juggling with AI agents. It reads the folders you
 approve (documents, Git, Claude Code and Codex sessions), tells you where you left off and what changed,
