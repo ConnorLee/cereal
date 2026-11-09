@@ -7,7 +7,10 @@ const sessionSrc = (s) => ({ type: 'session', tool: s.tool, id: s.id, label: `${
 const toolName = (s) => (s.tool === 'codex' ? 'Codex' : 'Claude');
 // A real market note, not a table row, code reference or a stray "timing" in engineering notes.
 export const NOT_PROSE = /^\s*\||\|\s*$|`|\]\(|\b[A-Z][a-z]+[A-Z]\w*\.\w+|\b\w+\.\w+\.\w+|\b[\w-]+\.(md|ts|js|mjs|swift|json)\b/;
-const marketNote = (m) => !NOT_PROSE.test(m.text) && (m.kind === 'market' || /\bwhy now\b|\btailwinds?\b|\bmarket timing\b/i.test(m.text));
+// Timing in the market sense: "why now", "market timing", tailwinds. Tailwind the CSS framework doesn't count.
+export const isTiming = (t) => /\bwhy now\b|\bmarket timing\b/i.test(t)
+  || (/\btailwinds?\b/i.test(t) && !/\btailwind(?:[\s/.-]*(?:css|config|class(?:es)?|build|ui|plugin|v?\d))/i.test(t) && !/\bTailwind\b(?!s)/.test(t));
+const marketNote = (m) => !NOT_PROSE.test(m.text) && (m.kind === 'market' || isTiming(m.text));
 const lower = (t) => String(t || '').replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
 
 export function buildDispatch({ def, capsule, index, now = Date.now() }) {
@@ -47,7 +50,11 @@ export function buildDispatch({ def, capsule, index, now = Date.now() }) {
 
   // Market and why now: lines the project's own documents say about its market (news is added by the server).
   const market = [];
-  for (const d of docs) for (const m of d.market || []) if (market.length < 4 && marketNote(m)) market.push({ text: m.text, kind: m.kind, src: docSrc(d, m.line) });
+  const said = new Set(); // a sentence repeated across lines or documents is shown once
+  for (const d of docs) for (const m of d.market || []) {
+    const key = m.text.toLowerCase().replace(/\W+/g, ' ').trim();
+    if (market.length < 4 && marketNote(m) && !said.has(key)) { said.add(key); market.push({ text: m.text, kind: m.kind, src: docSrc(d, m.line) }); }
+  }
   market.sort((a, b) => (a.kind === 'market' ? 0 : 1) - (b.kind === 'market' ? 0 : 1));
 
   // What's new in the product: commits and agent results in the window.

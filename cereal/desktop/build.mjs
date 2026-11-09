@@ -4,8 +4,20 @@
 //   NODE_BIN=/path/to/node npm run desktop   bundle a specific Node 22+ binary (default: the one running this)
 //   CEREAL_DESKTOP_OUT=/some/dir npm run desktop   build somewhere else (rebuilding under a running copy stops it)
 //
-// Needs Xcode's command-line tools (swiftc). The app is signed ad hoc: without a Developer ID it isn't
-// notarized, so the first launch needs Open Anyway in System Settings › Privacy & Security. Set CODESIGN_IDENTITY to sign with your own.
+// Needs Xcode's command-line tools (swiftc). Everything runs under the hardened runtime, as notarization requires.
+//
+// Signing and notarizing, so macOS opens the download without "couldn't verify" or malware warnings:
+//   - With one "Developer ID Application" certificate in your keychain, it's used automatically
+//     (or name one: CODESIGN_IDENTITY="Developer ID Application: Your Company (TEAMID)").
+//   - Notarization needs credentials stored once in the keychain under a profile name (default cereal-notary).
+//     Easiest is an App Store Connect team API key (Users and Access › Integrations, Developer role):
+//       xcrun notarytool store-credentials cereal-notary --key AuthKey_KEYID.p8 --key-id KEYID --issuer ISSUER-ID
+//     or an Apple ID with an app-specific password (account.apple.com › Sign-In and Security; your normal
+//     password is refused): xcrun notarytool store-credentials cereal-notary --apple-id you@example.com --team-id TEAMID
+//     NOTARY_PROFILE picks another profile; NOTARIZE=0 signs without notarizing.
+//   - Then the app is notarized and stapled, the disk image is signed, notarized and stapled, and both are
+//     checked the way Gatekeeper checks a download.
+// Without a Developer ID the app is signed ad hoc, and the first open needs Open Anyway in System Settings › Privacy & Security.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,8 +32,25 @@ const C = path.join(APP, 'Contents');
 const pkg = JSON.parse(fs.readFileSync(path.join(CEREAL, 'package.json'), 'utf8'));
 const VERSION = pkg.version;
 const NODE = process.env.NODE_BIN || process.execPath;
-const IDENTITY = process.env.CODESIGN_IDENTITY || '-';
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], ...opts }).toString();
+
+// The signing identity: CODESIGN_IDENTITY, else the keychain's only Developer ID Application certificate, else ad hoc.
+const identities = run('security', ['find-identity', '-v', '-p', 'codesigning']).split('\n')
+  .map((l) => /\)\s+([0-9A-F]{40})\s+"(.+)"/.exec(l)).filter(Boolean).map((m) => ({ hash: m[1], name: m[2] }));
+const devIds = identities.filter((i) => i.name.startsWith('Developer ID Application'));
+if (!process.env.CODESIGN_IDENTITY && devIds.length > 1) throw new Error(`Several Developer ID certificates; choose one with CODESIGN_IDENTITY:\n${devIds.map((i) => `  ${i.name}`).join('\n')}`);
+const IDENTITY = process.env.CODESIGN_IDENTITY || devIds[0]?.name || '-';
+const identityName = identities.find((i) => i.hash === IDENTITY.toUpperCase())?.name || IDENTITY;
+const DEVELOPER_ID = identityName.startsWith('Developer ID Application');
+const NOTARIZE = DEVELOPER_ID && process.env.NOTARIZE !== '0';
+const NOTARY_PROFILE = process.env.NOTARY_PROFILE || 'cereal-notary';
+const STORE_HINT = `Store credentials once, with an App Store Connect API key (Users and Access › Integrations):\n  xcrun notarytool store-credentials ${NOTARY_PROFILE} --key AuthKey_KEYID.p8 --key-id KEYID --issuer ISSUER-ID\n(or build with NOTARIZE=0 to sign without notarizing)`;
+// Check the notarization credentials before building, so a missing profile fails in seconds, not after the build.
+if (NOTARIZE) {
+  try { execFileSync('xcrun', ['notarytool', 'history', '--keychain-profile', NOTARY_PROFILE], { stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) {
+    throw new Error(`Signing with ${identityName}, but notarization can't sign in with the keychain profile "${NOTARY_PROFILE}":\n${(e.stderr?.toString() || e.message).trim()}\n${STORE_HINT}`);
+  }
+}
 
 const nodeMajor = Number(run(NODE, ['-p', 'process.versions.node']).trim().split('.')[0]);
 if (nodeMajor < 22) throw new Error(`Cereal needs Node 22 or newer to bundle; ${NODE} is ${nodeMajor}.`);
@@ -93,17 +122,66 @@ run('iconutil', ['-c', 'icns', iconset, '-o', path.join(C, 'Resources', 'Cereal.
 fs.rmSync(iconset, { recursive: true, force: true });
 fs.rmSync(src, { force: true });
 
-// 6. Sign: Node first, then the app around it.
-run('codesign', ['--force', '--sign', IDENTITY, path.join(C, 'Resources', 'node', 'node')]);
-run('codesign', ['--force', '--sign', IDENTITY, APP]);
-run('codesign', ['--verify', '--strict', APP]);
+// 6. Sign under the hardened runtime: Node first (with only the JIT exceptions V8 needs), then the app around it.
+//    A real identity also gets a secure timestamp, which notarization requires.
+const sign = (target, extra = []) => run('codesign', ['--force', '--sign', IDENTITY, '--options', 'runtime', IDENTITY === '-' ? '--timestamp=none' : '--timestamp', ...extra, target]);
+sign(path.join(C, 'Resources', 'node', 'node'), ['--identifier', 'app.cereal.desktop.node', '--entitlements', path.join(HERE, 'node.entitlements')]);
+sign(APP);
+run('codesign', ['--verify', '--strict', '--deep', APP]);
 
-// 7. A disk image with the app and a shortcut to Applications, so installing is one drag.
+// Notarizing: Apple scans the upload and issues a ticket; stapling attaches it, so the first open works offline too.
+function notarize(file) {
+  console.log(`Notarizing ${path.basename(file)} (usually a few minutes)…`);
+  let out;
+  try {
+    out = execFileSync('xcrun', ['notarytool', 'submit', file, '--keychain-profile', NOTARY_PROFILE, '--wait', '--output-format', 'json'], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  } catch (e) {
+    out = e.stdout?.toString() || '';
+    const err = e.stderr?.toString() || e.message;
+    if (!out.trim().startsWith('{')) {
+      throw new Error(/keychain|profile|credential/i.test(err)
+        ? `No notarization credentials in the keychain under "${NOTARY_PROFILE}". ${STORE_HINT}`
+        : `Notarization didn't run: ${err.trim()}`);
+    }
+  }
+  const result = JSON.parse(out);
+  if (result.status !== 'Accepted') {
+    let log = '';
+    try { log = run('xcrun', ['notarytool', 'log', result.id, '--keychain-profile', NOTARY_PROFILE]); } catch {}
+    throw new Error(`Apple didn't accept ${path.basename(file)} (${result.status}): ${result.message || ''}\n${log}`);
+  }
+  console.log(`Notarized ${path.basename(file)} (${result.id}).`);
+}
+if (NOTARIZE) {
+  const zip = path.join(DIST, 'Cereal-for-notarization.zip');
+  run('ditto', ['-c', '-k', '--keepParent', APP, zip]);
+  notarize(zip);
+  fs.rmSync(zip, { force: true });
+  run('xcrun', ['stapler', 'staple', APP]);
+}
+
+// 7. A disk image with the app and a shortcut to Applications, so installing is one drag. With a real identity it is
+//    signed too, and notarized and stapled alongside the app.
+const DMG = path.join(DIST, 'Cereal.dmg');
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'cereal-dmg-'));
 run('ditto', [APP, path.join(stage, 'Cereal.app')]);
 fs.symlinkSync('/Applications', path.join(stage, 'Applications'));
-run('hdiutil', ['create', '-volname', 'Cereal', '-srcfolder', stage, '-ov', '-format', 'UDZO', '-quiet', path.join(DIST, 'Cereal.dmg')]);
+run('hdiutil', ['create', '-volname', 'Cereal', '-srcfolder', stage, '-ov', '-format', 'UDZO', '-quiet', DMG]);
 fs.rmSync(stage, { recursive: true, force: true });
+if (IDENTITY !== '-') run('codesign', ['--force', '--sign', IDENTITY, '--timestamp', DMG]);
+if (NOTARIZE) {
+  notarize(DMG);
+  run('xcrun', ['stapler', 'staple', DMG]);
+}
+
+// 8. Check the result the way Gatekeeper checks a download.
+const assess = (args) => { try { execFileSync('spctl', args, { stdio: ['ignore', 'pipe', 'pipe'] }); return true; } catch { return false; } };
+const appOK = assess(['--assess', '--type', 'exec', APP]);
+const dmgOK = IDENTITY !== '-' && assess(['--assess', '--type', 'open', '--context', 'context:primary-signature', DMG]);
+if (NOTARIZE && !(appOK && dmgOK)) throw new Error('Signed and notarized, but Gatekeeper still rejects the app or the disk image; see spctl --assess -vv.');
 
 const size = (p) => `${(Number(run('du', ['-sk', p]).split('\t')[0]) / 1024).toFixed(0)} MB`;
-console.log(`Built ${path.relative(CEREAL, APP)} (${size(APP)}, ${arch}, Node ${run(NODE, ['-v']).trim()}) and ${path.relative(CEREAL, path.join(DIST, 'Cereal.dmg'))} (${size(path.join(DIST, 'Cereal.dmg'))}).`);
+console.log(`Built ${path.relative(CEREAL, APP)} (${size(APP)}, ${arch}, Node ${run(NODE, ['-v']).trim()}) and ${path.relative(CEREAL, DMG)} (${size(DMG)}).`);
+console.log(NOTARIZE ? `Signed by ${identityName}, notarized and stapled: macOS opens it without warnings.`
+  : DEVELOPER_ID ? `Signed by ${identityName}, not notarized (NOTARIZE=0): macOS still warns on first open.`
+  : `Signed ${IDENTITY === '-' ? 'ad hoc' : `by ${identityName}`}, not notarized: the first open needs Open Anyway in System Settings › Privacy & Security.`);

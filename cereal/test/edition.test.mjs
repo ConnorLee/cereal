@@ -12,10 +12,19 @@ test('market and why-now lines are picked out of documents, with their line numb
   assert.match(s.market[0].text, /^TAM: roughly 2 million/);
 });
 
+test('Tailwind the CSS framework is not a market tailwind, and quoted lines lose their quote marks', () => {
+  const md = '# Casset TanStack Start + Effect + Convex + Tailwind CSS lab\n\nThe interface is built with Tailwind CSS and a serializable result.\n\nThe check creates a production Start/Tailwind build for the package.\n\n> Why now: a year ago this was a nice idea; today it is expected.\n\n- Regulatory tailwinds make on-device storage a selling point.\n';
+  const s = extractSignals(md);
+  assert.deepEqual(s.market.map((m) => m.line), [7, 9]);
+  assert.match(s.market[0].text, /^Why now: a year ago/);
+  assert.equal(s.market[1].kind, 'whynow');
+});
+
 test('the morning edition reports what moved, from sourced facts only', async () => {
   const root = tmpDir('edition');
   const repo = makeRepo(root, 'orbit');
-  fs.writeFileSync(path.join(repo, 'docs', 'MARKET.md'), '# Market\n\n- Total addressable market: 40,000 small venues in Europe.\n- Why now: cheap smart bulbs reached every venue.\n');
+  // The sizing line is repeated further down, as documents often do; the edition shows it once.
+  fs.writeFileSync(path.join(repo, 'docs', 'MARKET.md'), '# Market\n\n- Total addressable market: 40,000 small venues in Europe.\n- Why now: cheap smart bulbs reached every venue.\n\n## Recap\n\n- Total addressable market: 40,000 small venues in Europe.\n');
   sh(repo, 'add', '-A');
   sh(repo, 'commit', '-q', '-m', 'Add market notes');
   const claude = path.join(root, 'claude', 'orbit');

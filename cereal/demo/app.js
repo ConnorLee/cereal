@@ -94,7 +94,9 @@ const icon = (p, size = 'md') => p.iconUrl
 // The header: the latest product someone committed, as a device mockup or a full image, fading into the page.
 function heroFigure(hero, { size = 'story', caption = false } = {}) {
   if (!hero?.images?.length) return '';
-  const imgs = hero.images.map((img) => `<img src="${esc(img.url)}" alt="" loading="lazy" decoding="async" width="${img.w}" height="${img.h}">`);
+  // A project page's cover is the first thing on screen, so it loads straight away; covers further down wait.
+  const load = size === 'page' ? 'fetchpriority="high"' : 'loading="lazy"';
+  const imgs = hero.images.map((img) => `<img src="${esc(img.url)}" alt="" ${load} decoding="async" width="${img.w}" height="${img.h}">`);
   const body = hero.layout === 'devices'
     ? `<div class="devices">${imgs.map((i) => `<div class="device">${i}</div>`).join('')}</div>`
     : imgs[0];
@@ -829,8 +831,21 @@ function paintSources(p, disc) {
 
 // ---------- Screen C: Context Switcher ----------
 
+// Typing in the switcher picks the project whose name starts with (or else contains) what was typed.
+function typeInSwitcher(key) {
+  clearTimeout(S.swQueryTimer);
+  S.swQuery = (S.swQuery || '') + key.toLowerCase();
+  S.swQueryTimer = setTimeout(() => { S.swQuery = ''; if (!switcher.hidden) paintSwitcher(); }, 1200);
+  const names = S.state.projects.map((p) => p.name.toLowerCase());
+  let i = names.findIndex((n) => n.startsWith(S.swQuery));
+  if (i < 0) i = names.findIndex((n) => n.includes(S.swQuery));
+  if (i >= 0) S.swIndex = i;
+  paintSwitcher();
+}
+
 function openSwitcher() {
   if (!S.state) return;
+  S.swQuery = '';
   S.swIndex = Math.max(0, S.state.projects.findIndex((p) => p.id !== S.current));
   paintSwitcher();
   switcher.hidden = false;
@@ -842,7 +857,7 @@ function paintSwitcher() {
   const ps = S.state.projects;
   const notes = S.state.notifications.slice(-4).reverse();
   switcher.innerHTML = `<div class="sw-backdrop" data-act="close-sw"></div><div class="sw-panel">
-    <div class="sw-head"><span>Switch project</span><span class="muted"><kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>↵</kbd> to open</span></div>
+    <div class="sw-head"><span>Switch project${S.swQuery ? ` <span class="sw-query">${esc(S.swQuery)}</span>` : ''}</span><span class="muted">Type a name or <kbd>↑</kbd><kbd>↓</kbd>, <kbd>↵</kbd> to open</span></div>
     <ul class="sw-list">${ps.map((p, i) => {
       const c = S.capsules[p.id];
       const resume = c?.resume?.[0] || null;
@@ -1458,7 +1473,10 @@ document.addEventListener('keydown', (ev) => {
     if (ev.key === 'ArrowDown') { ev.preventDefault(); S.swIndex = (S.swIndex + 1) % n; return paintSwitcher(); }
     if (ev.key === 'ArrowUp') { ev.preventDefault(); S.swIndex = (S.swIndex - 1 + n) % n; return paintSwitcher(); }
     if (ev.key === 'Enter') { ev.preventDefault(); return chooseSwitcher(S.swIndex); }
-    if (/^[1-9]$/.test(ev.key)) return chooseSwitcher(Number(ev.key) - 1);
+    if (/^[1-9]$/.test(ev.key) && !S.swQuery) return chooseSwitcher(Number(ev.key) - 1);
+    if (ev.key === 'Backspace' && S.swQuery) { ev.preventDefault(); S.swQuery = S.swQuery.slice(0, -1); return paintSwitcher(); }
+    const printable = ev.key.length === 1 && !ev.metaKey && !ev.ctrlKey && !ev.altKey;
+    if (printable && (ev.key !== ' ' || S.swQuery)) { ev.preventDefault(); return typeInSwitcher(ev.key); }
     return;
   }
   if (ev.key === 'Escape' && drawer.classList.contains('open')) return closeDrawer();

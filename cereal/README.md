@@ -16,11 +16,15 @@ and reads nothing until you approve. Closing the window keeps Cereal in the menu
 briefing still goes out; turn on **Open at Login** there. Everything else lives in the app.
 
 The app bundles Node, so there is nothing else to install. It needs a Mac with Apple silicon and macOS 13
-or later. It isn't notarized yet: the first time you open it, macOS blocks it; choose **Open Anyway** in
-System Settings › Privacy & Security.
+or later. It's signed with a Developer ID and notarized by Apple, so it opens like any other Mac app.
 
 Build it yourself with `npm run desktop` (needs Xcode's command-line tools): it writes
-`desktop/dist/Cereal.app` and `desktop/dist/Cereal.dmg`, signed ad hoc, or with `CODESIGN_IDENTITY` if set.
+`desktop/dist/Cereal.app` and `desktop/dist/Cereal.dmg`, under the hardened runtime. With a **Developer ID
+Application** certificate in your keychain it signs with it, then notarizes and staples the app and the disk
+image so macOS opens the download without warnings. Notarizing needs credentials stored once, easiest with an
+App Store Connect team API key (Users and Access › Integrations, Developer role):
+`xcrun notarytool store-credentials cereal-notary --key AuthKey_KEYID.p8 --key-id KEYID --issuer ISSUER-ID`.
+Without a Developer ID the build is signed ad hoc and the first open needs Open Anyway.
 The app keeps its data in the same place as the command-line version, so don't run both at once.
 
 ## Run it from source

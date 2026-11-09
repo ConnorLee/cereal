@@ -12,15 +12,32 @@ export function projectsFile() {
   return path.join(dataDir(), 'projects.json');
 }
 
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function keywordOf(p, name) {
+  if (p.keyword instanceof RegExp) return p.keyword;
+  try { return new RegExp(p.keyword || p.id, 'i'); } catch { return new RegExp(escapeRe(name), 'i'); }
+}
+
+// Every entry gets a name, folders to look in and a brand. A file written by another Cereal build (Cereal's
+// native prototype keeps `identity: { name, colorHex }` and `locations: [{ path }]` in the same folder) still
+// reads: its names, folders and colours carry over instead of showing up as "undefined".
 function normalize(list) {
-  return list.map((p) => ({
-    ...p,
-    tagline: p.tagline || '',
-    keyword: p.keyword instanceof RegExp ? p.keyword : new RegExp(p.keyword || p.id, 'i'),
-    seeds: p.seeds || [],
-    markers: p.markers || [],
-    brand: { ...FALLBACK_BRAND, ...(p.brand || {}) },
-  }));
+  if (!Array.isArray(list)) return [];
+  return list.filter((p) => p && typeof p === 'object' && p.id).map((p) => {
+    const name = String(p.name || p.identity?.name || p.id).trim() || String(p.id);
+    const seeds = Array.isArray(p.seeds) ? p.seeds : Array.isArray(p.locations) ? p.locations.map((l) => l?.path).filter((x) => typeof x === 'string') : [];
+    const accent = /^#[0-9a-f]{6}$/i.test(p.identity?.colorHex || '') ? { accent: p.identity.colorHex } : {};
+    return {
+      ...p,
+      id: String(p.id),
+      name,
+      tagline: typeof p.tagline === 'string' ? p.tagline : '',
+      keyword: keywordOf(p, name),
+      seeds,
+      markers: Array.isArray(p.markers) ? p.markers : [],
+      brand: { ...FALLBACK_BRAND, ...accent, ...(p.brand && typeof p.brand === 'object' ? p.brand : {}) },
+    };
+  });
 }
 
 // New projects get a calm identity automatically; picking colours is a decision nobody needs to make on day one.

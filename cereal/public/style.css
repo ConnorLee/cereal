@@ -275,6 +275,7 @@ main { padding: 0 40px 120px; max-width: 1080px; margin: 0 auto; outline: none; 
 .sw-panel { position: relative; width: min(620px, 94vw); background: var(--surface); border-radius: 22px; box-shadow: 0 0 0 1px var(--rule), 0 40px 100px -30px rgba(23, 22, 27, 0.4); padding: 10px; }
 .sw-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px 10px; font-weight: 500; font-size: 14px; color: var(--quiet); }
 .sw-head .muted { font-weight: 400; font-size: 13px; display: flex; gap: 4px; align-items: center; }
+.sw-query { margin-left: 6px; padding: 1px 7px; border-radius: 6px; background: var(--rule); color: var(--ink); font-weight: 500; }
 .sw-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .sw-item { display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 16px; cursor: pointer; outline: none; }
 .sw-item.active { background: var(--p-tint); }
