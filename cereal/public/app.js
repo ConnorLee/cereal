@@ -235,6 +235,7 @@ function renderChrome() {
 function parseRoute() {
   const h = location.hash.replace(/^#/, '') || '/';
   let m;
+  if ((m = /^\/add(?:\/(.+))?$/.exec(h))) return { name: 'add', folder: m[1] ? decodeURIComponent(m[1]) : null };
   if ((m = /^\/p\/([\w-]+)\/sources$/.exec(h))) return { name: 'sources', id: m[1] };
   if ((m = /^\/p\/([\w-]+)$/.exec(h))) return { name: 'project', id: m[1] };
   if ((m = /^\/briefing\/open\/(\w+)\/(\d+)$/.exec(h))) return { name: 'briefing-open', bid: m[1], n: m[2] };
@@ -250,6 +251,7 @@ async function onRoute() {
   if (next.id) S.current = next.id;
   if (next.name !== 'project') closeDrawer({ persist: false });
   if (next.name === 'portfolio') { S.portfolioPainted = false; return renderPortfolio(); }
+  if (next.name === 'add') return renderAdd(next.folder);
   if (next.name === 'sources') return renderSources(next.id);
   if (next.name === 'briefing') return renderBriefing();
   if (next.name === 'briefing-open') return openBriefingLink(next.bid, next.n);
@@ -282,9 +284,18 @@ async function renderPortfolio() {
   try { await loadState(); } catch (e) { return errorView(e, renderPortfolio); }
   const st = S.state;
   if (!st.projects.length) {
-    view.innerHTML = `<section class="home"><h1 class="story-text home-empty">Nothing to pick up yet. Tell Cereal what you’re building.</h1>${addProjectForm(true)}</section>`;
+    // Already showing the first-run screen: leave it alone, so a timed refresh never undoes ticks or typing.
+    if (view.querySelector('.home-empty')) return;
+    view.innerHTML = `<section class="home"><h1 class="story-text home-empty">Nothing to pick up yet. Tell Cereal what you’re building.</h1>
+      <div id="suggest" class="suggest"></div>
+      ${addProjectForm(true)}
+      <p class="just-looking">Just looking? <a href="https://cereal.work/demo.html" target="_blank" rel="noopener">Try Cereal with sample projects</a>, no folders needed.</p></section>`;
+    fillSuggestions($('#suggest'), { first: true });
+    showUpdate();
     return;
   }
+  // Projects just added are indexing; look again soon instead of waiting for the half-minute refresh.
+  if (st.projects.some((p) => p.indexing)) setTimeout(() => { if (S.route.name === 'portfolio') renderPortfolio(); }, 2500);
   const ordered = [...st.projects].sort((a, b) => urgency(b) - urgency(a));
   const waiting = st.projects.filter((p) => p.needs?.reviews || p.needs?.risks || p.questions?.length).length;
   const [edition, briefing] = await Promise.all([api('/api/edition').catch(() => null), api('/api/briefing').catch(() => null)]);
@@ -296,11 +307,12 @@ async function renderPortfolio() {
     ${briefingEntry(briefing)}
     <p class="home-intro">${Word(st.projects.length)} project${st.projects.length === 1 ? '' : 's'}. ${waiting ? `${Word(waiting)} ${waiting === 1 ? 'has' : 'have'} something waiting for you.` : 'Nothing is waiting on you.'}</p>
     <div class="stories">${ordered.map(storyBlock).join('')}</div>
-    <details class="add-project"><summary>Add a project</summary>${addProjectForm(false)}</details>
+    <details class="add-project"><summary>Add a project</summary><p class="add-more"><a href="#/add">Pick from what you’ve been working on</a></p>${addProjectForm(false)}</details>
     ${st.unresolved?.length ? `<details class="unresolved"><summary>${plural(st.unresolved.length, 'agent session')} Cereal couldn’t place</summary>
       <p class="hint">They touched project folders, but not clearly one project, so Cereal leaves them unassigned instead of guessing.</p>
       <ul>${st.unresolved.slice(0, 8).map((s) => `<li>${esc(s.title)} <span class="muted">${esc(s.attribution.evidence)}, ${rel(s.lastAt)}</span></li>`).join('')}</ul></details>` : ''}
   </section>`;
+  showUpdate();
 }
 
 // ---------- the morning edition ----------
@@ -385,6 +397,93 @@ function addProjectForm(first) {
     <label>Folder<span class="folder-row"><input name="path" required placeholder="~/Code/field-notes" autocomplete="off"><button type="button" class="btn" data-act="pick-new">Choose…</button></span></label>
     <div class="add-actions"><button type="submit" class="btn primary">Add project</button><span class="status-msg" id="addStatus" role="status"></span></div>
   </form>`;
+}
+
+// ---------- Adding several projects: what you've been working on, or the repositories inside a dropped folder ----------
+// Suggestions come from your Claude Code and Codex sessions and your usual code folders (names and Git metadata only).
+// Ticking one and adding it is the approval; nothing is read before that.
+const PLACES = { Documents: 'Documents', Desktop: 'Desktop', Downloads: 'Downloads', Library: 'iCloud Drive' };
+const protectedPlace = (p) => PLACES[tild(p).split('/')[1]] || 'that folder';
+function suggestWhy(s) {
+  if (s.taken) return 'Already in Cereal';
+  const bits = [];
+  const n = s.sessions?.claude || 0;
+  const m = s.sessions?.codex || 0;
+  const tools = [n ? plural(n, 'Claude Code session') : '', m ? plural(m, 'Codex session') : ''].filter(Boolean).join(' and ');
+  if (tools && s.lastSessionAt) bits.push(`${tools}, the last ${ago(s.lastSessionAt)}`);
+  else if (s.lastCommit) bits.push(`Last commit ${ago(s.lastCommit.date)}: ${shortTitle(s.lastCommit.subject, 60)}`);
+  if (s.checkouts > 1) bits.push(`${s.checkouts} checkouts`);
+  if (s.protectedFolder) bits.push(`macOS asks once whether Cereal may read ${protectedPlace(s.path)}`);
+  return bits.join(' · ');
+}
+const addLabel = (n) => (n ? `Add ${n === 1 ? 'one project' : `${word(n)} projects`}` : 'Add projects');
+function suggestPicker(list, { folder } = {}) {
+  S.suggestList = list;
+  const n = list.filter((s) => s.suggested && !s.taken).length;
+  return `<form class="suggest-form" id="suggestForm"${folder ? ` data-folder="${esc(folder.path)}" data-name="${esc(folder.name)}"` : ''}>
+    <ul class="cands">${list.map((s, i) => `<li class="cand sug${s.taken ? ' taken' : ''}"><label>
+      <input type="checkbox" name="sug" value="${i}"${s.suggested && !s.taken ? ' checked' : ''}${s.taken ? ' disabled' : ''}>
+      <div class="cand-body"><p class="cand-title">${esc(s.name)} <span class="kind">${s.kind === 'repository' ? 'Git repository' : 'Folder'}</span></p>
+      <p class="cand-path mono">${esc(tild(s.path))}</p>
+      <p class="sug-why">${esc(suggestWhy(s))}</p></div></label></li>`).join('')}</ul>
+    <div class="src-actions">${folder ? '<button type="button" class="btn quiet" data-act="keep-together">Keep them together as one project</button>' : ''}<span class="grow"></span><button type="submit" class="btn primary"${n ? '' : ' disabled'}>${addLabel(n)}</button></div>
+    <p class="status-msg" id="suggestStatus" role="status"></p></form>`;
+}
+async function fillSuggestions(el, { first } = {}) {
+  el.innerHTML = '<p class="sug-loading">Looking for what you’ve been working on…</p>';
+  let list = [];
+  try { list = (await api('/api/suggestions')).suggestions || []; } catch { /* the folder picker still works */ }
+  if (!el.isConnected) return;
+  if (!list.length) {
+    el.innerHTML = first ? '' : '<p class="hint">Nothing new turned up in your recent agent sessions or code folders. Choose a folder instead.</p>';
+    return;
+  }
+  el.innerHTML = `${first ? '<h2 class="sug-head">You’ve been working on these</h2>' : ''}
+    <p class="sug-sub">Found in your Claude Code and Codex sessions and your code folders. Tick the ones to follow; Cereal reads nothing until you add them.</p>
+    ${suggestPicker(list)}`;
+  const dz = $('.drop-zone.first');
+  if (dz) { dz.classList.add('compact'); dz.querySelector('.drop-title').textContent = 'Or drag a project folder here.'; }
+  const lead = $('#addForm > p');
+  if (lead && first) lead.textContent = 'Or name a project and choose its folder yourself.';
+}
+async function renderAdd(folder) {
+  document.title = 'Add projects · Cereal';
+  S.current = null;
+  renderChrome();
+  window.scrollTo(0, 0);
+  const name = folder ? folderName(folder) : '';
+  view.innerHTML = `<section class="sources add-view">
+    <h1>${folder ? `${esc(name)} holds several projects` : 'Add your projects'}</h1>
+    ${folder ? `<p class="lead">Each Git repository in <span class="mono">${esc(tild(folder))}</span> can be its own project, with its own story and morning headline. Tick the ones to follow.</p>` : ''}
+    <div id="suggest"><p class="sug-loading">Looking…</p></div>
+    ${folder ? '' : `<div class="add-other">${addProjectForm(false)}</div>`}
+  </section>`;
+  if (!folder) return fillSuggestions($('#suggest'));
+  try {
+    const r = await api(`/api/split?path=${encodeURIComponent(folder)}`);
+    if (!r.split) {
+      // One project after all (the folder changed, or holds a single repository).
+      const p = await post('/api/projects', { name, path: folder, together: true });
+      await loadState();
+      location.hash = `#/p/${p.id}/sources`;
+      return;
+    }
+    $('#suggest').innerHTML = suggestPicker(r.repos, { folder: { path: folder, name: r.name } });
+  } catch (e) { $('#suggest').innerHTML = `<p class="status-msg">${esc(e.message)}</p>`; }
+}
+// A newer Cereal for Mac is out: say so once at the top of Home, with a direct download.
+async function showUpdate() {
+  const u = S.update || (S.update = (await api('/api/update').catch(() => null)) || {});
+  const home = $('.home');
+  if (!u.latest || !home || home.querySelector('.update-note')) return;
+  home.insertAdjacentHTML('afterbegin', `<p class="update-note"><b>Cereal ${esc(u.latest)} is out.</b> <a href="${esc(u.download || u.url)}" target="_blank" rel="noopener">Download it</a>, then drag it to Applications to replace this one. <a href="${esc(u.url)}" target="_blank" rel="noopener">What’s new</a></p>`);
+}
+
+// The answer to adding a folder: a project to approve, or a folder of repositories to choose from.
+async function afterAdd(r) {
+  if (r.split) { location.hash = `#/add/${encodeURIComponent(r.folder)}`; return; }
+  await loadState();
+  location.hash = `#/p/${r.id}/sources`;
 }
 
 function stateLine(p) {
@@ -1375,8 +1474,15 @@ document.addEventListener('click', async (ev) => {
     if (!r.path) return;
     const status = $('#addStatus');
     if (status) status.textContent = 'Looking for it with Git…';
-    try { const p = await post('/api/projects', { name: folderName(r.path), path: r.path }); await loadState(); location.hash = `#/p/${p.id}/sources`; }
+    try { await afterAdd(await post('/api/projects', { name: folderName(r.path), path: r.path })); }
     catch (e) { if (status) status.textContent = e.message; else alert(e.message); }
+    return;
+  }
+  if (act === 'keep-together') {
+    const form = t.closest('#suggestForm');
+    t.disabled = true;
+    try { await afterAdd(await post('/api/projects', { name: folderName(form.dataset.folder), path: form.dataset.folder, together: true })); }
+    catch (e) { $('#suggestStatus').textContent = e.message; t.disabled = false; }
     return;
   }
   if (act === 'forget') {
@@ -1415,6 +1521,14 @@ document.addEventListener('click', async (ev) => {
 });
 
 document.addEventListener('change', (ev) => {
+  const picker = ev.target.closest('#suggestForm');
+  if (picker) {
+    const n = picker.querySelectorAll('input[name=sug]:checked').length;
+    const btn = picker.querySelector('[type=submit]');
+    btn.textContent = addLabel(n);
+    btn.disabled = !n;
+    return;
+  }
   const form = ev.target.closest('#briefingForm');
   if (!form || ['email', 'code'].includes(ev.target.name)) return;
   if (ev.target.name === 'enabled') return saveBriefing({ enabled: ev.target.checked }, ev.target.checked ? 'On. Your first briefing arrives at the next delivery time.' : 'Off. Nothing will be sent.');
@@ -1441,11 +1555,27 @@ document.addEventListener('submit', async (ev) => {
     const f = new FormData(ev.target);
     const status = $('#addStatus');
     status.textContent = 'Looking for it with Git…';
+    try { await afterAdd(await post('/api/projects', { name: f.get('name'), path: f.get('path') })); } catch (e) { status.textContent = e.message; }
+    return;
+  }
+  if (ev.target.id === 'suggestForm') {
+    ev.preventDefault();
+    const picks = [...ev.target.querySelectorAll('input[name=sug]:checked')].map((i) => S.suggestList?.[Number(i.value)]).filter(Boolean);
+    if (!picks.length) return;
+    const btn = ev.target.querySelector('[type=submit]');
+    const status = $('#suggestStatus');
+    btn.disabled = true;
+    status.textContent = `Adding ${plural(picks.length, 'project')}. Indexing is read-only and runs in the background…`;
     try {
-      const r = await post('/api/projects', { name: f.get('name'), path: f.get('path') });
+      const r = await post('/api/projects/bulk', { projects: picks.map((s) => ({ path: s.path, name: s.name })) });
       await loadState();
-      location.hash = `#/p/${r.id}/sources`;
-    } catch (e) { status.textContent = e.message; }
+      if (r.failed.length) {
+        status.textContent = `${r.added.length ? `Added ${r.added.map((a) => a.name).join(', ')}. ` : ''}Couldn’t add ${r.failed.map((f) => `${f.name} (${f.error})`).join(', ')}`;
+        btn.disabled = false;
+        return;
+      }
+      if (location.hash === '#/' || location.hash === '') renderPortfolio(); else location.hash = '#/';
+    } catch (e) { status.textContent = e.message; btn.disabled = false; }
     return;
   }
   if (ev.target.id !== 'srcForm') return;

@@ -9,6 +9,7 @@ import { IMAGE_TYPES, imageSize } from './images.mjs';
 import { isInside, expandHome } from './paths.mjs';
 import { makeDefinition, normalizeOne, saveDefinitions } from './projects.mjs';
 import { buildDispatch, buildLede } from './edition.mjs';
+import { suggestProjects, reposInside, prettyName } from './suggest.mjs';
 
 export class Engine {
   constructor(store, defs) {
@@ -35,8 +36,60 @@ export class Engine {
     this.byId[def.id] = def;
     const saved = saveDefinitions(this.defs);
     await this.discover(def.id);
-    await this.addFolder(def.id, folder);
-    return { id: def.id, saved };
+    const cand = await this.addFolder(def.id, folder);
+    return { id: def.id, saved, candidateId: cand.id };
+  }
+
+  // Several projects at once, from suggestions the person ticked. Ticking one is the approval, so each is
+  // approved for its folder and starts indexing right away; one that can't be read doesn't stop the rest.
+  async addProjects(list) {
+    const added = [];
+    const failed = [];
+    for (const item of list) {
+      const folder = String(item?.path || '').replace(/\/$/, '');
+      const name = String(item?.name || '').trim() || prettyName(folder);
+      try {
+        const { id, candidateId } = await this.addProject(name, folder);
+        this.approve(id, [candidateId]).catch((e) => console.error('index failed', id, e.message));
+        added.push({ id, name });
+      } catch (e) {
+        failed.push({ path: folder, name, error: e.message });
+      }
+    }
+    return { added, failed };
+  }
+
+  // Folders and Git directories that already belong to a project, so suggestions don't offer them again.
+  taken() {
+    const paths = [];
+    const commonDirs = [];
+    for (const d of this.defs) {
+      paths.push(...d.seeds.map(expandHome));
+      for (const s of this.store.project(d.id).sources) {
+        paths.push(s.path, ...(s.worktrees || []).map((w) => w.path));
+        if (s.commonDir) commonDirs.push(s.commonDir);
+      }
+    }
+    return { paths, commonDirs };
+  }
+
+  // A folder that holds several repositories (~/Developer, say) is usually several projects. Offer them one by
+  // one instead of making one project out of all of them; the person can still keep them together.
+  async splitFolder(folder) {
+    if (await repoIdentity(folder)) return null; // a repository, or a folder inside one, is one project
+    const repos = await reposInside(folder);
+    if (repos.length < 2) return null;
+    const { paths, commonDirs } = this.taken();
+    for (const r of repos) {
+      r.taken = commonDirs.includes(r.commonDir) || paths.some((p) => p === r.path || isInside(r.path, p));
+      r.suggested = !r.taken;
+    }
+    return { split: true, folder, name: prettyName(folder), repos };
+  }
+
+  async suggestions() {
+    if (!this.agentScan) await this.refreshAgents().catch(() => null);
+    return suggestProjects({ sessions: this.agentScan?.sessions || [], taken: this.taken() });
   }
 
   def(id) {
@@ -71,6 +124,11 @@ export class Engine {
       cand = { id: candidateId(ident.commonDir), kind: 'repository', path: trees[0]?.path || folder, commonDir: ident.commonDir, label: path.basename(folder), evidence: [`Selected by you`, `${trees.length} checkout(s) share this repository`], worktrees: withLast.map((t) => ({ path: t.path, branch: t.branch, prunable: t.prunable, locked: t.locked, last: t.last })), manual: true, recommended: true, note: 'Added from the folder picker.' };
     } else {
       cand = { id: candidateId(folder), kind: 'documents', path: folder, label: path.basename(folder), evidence: ['Selected by you'], manual: true, recommended: true, note: 'Added from the folder picker.' };
+      // Its repositories are listed on their own; reading the whole folder as well would read them twice.
+      if ((p.discovery?.candidates || []).some((c) => c.kind === 'repository' && isInside(c.path, folder))) {
+        cand.recommended = false;
+        cand.note = 'Its repositories are listed on their own. Tick this too only for documents kept outside them.';
+      }
     }
     p.discovery ||= { projectId: id, candidates: [], unrelated: [] };
     p.discovery.candidates = p.discovery.candidates.filter((c) => c.id !== cand.id).concat(cand);
@@ -113,7 +171,7 @@ export class Engine {
         u.retained = docs || repos ? { docs, repos, indexedAt: prev.indexedAt } : before || null;
       }
       idx.icon = await findIcon(p, idx);
-      idx.wordmark = await findWordmark(idx);
+      idx.wordmark = await findWordmark(idx, this.def(id));
       // A cover you chose stays until a newer product shot is committed; then the header follows the product again.
       const pinned = await pinnedCover(this.def(id));
       if (pinned && (!idx.hero || Date.parse(idx.hero.at) <= Date.parse(pinned.at))) idx.hero = pinned;
@@ -131,7 +189,13 @@ export class Engine {
 
   // ---------- Agents ----------
 
-  async refreshAgents() {
+  // One scan at a time: the poll and a first-run screen asking for suggestions share it.
+  refreshAgents() {
+    this.agentRefresh ||= this.#refreshAgents().finally(() => { this.agentRefresh = null; });
+    return this.agentRefresh;
+  }
+
+  async #refreshAgents() {
     const scan = await scanAgents(this.store.agentCache);
     this.store.agentCache = scan.cache;
     this.agentScan = scan;
@@ -461,12 +525,16 @@ async function findIcon(p, idx) {
 }
 
 // A wordmark or logotype file, if the project keeps one: wide, on a light background, not an inverse variant.
-async function findWordmark(idx) {
+// Sample and test art (a demo's made-up brands, fixtures) is never the project's own wordmark.
+const NOT_OURS = /(^|\/)(demo|demos|sample|samples|example|examples|fixture|fixtures|test|tests|__tests__|mock|mocks|vendor|third[-_]party)\//i;
+async function findWordmark(idx, def) {
   const repo = idx.repos[0];
   if (!repo) return null;
   const root = repo.focus || repo.path;
+  const named = (f) => (def?.keyword?.test(path.basename(f)) ? 0 : 1); // a file named for the project comes first
   const files = (await trackedFiles(root)).filter((f) => /(^|\/)[^/]*(wordmark|logotype|logo[-_ ]?type|lockup)[^/]*\.(svg|png)$/i.test(f)
-    && !/white|inverse|reversed|dark|negative|mono|black|node_modules|\/(dist|build|out)\//i.test(f));
+    && !/white|inverse|reversed|dark|negative|mono|black|node_modules|\/(dist|build|out)\//i.test(f) && !NOT_OURS.test(f))
+    .sort((a, b) => named(a) - named(b));
   for (const f of files.slice(0, 12)) {
     const abs = path.join(root, f);
     const buf = await fs.readFile(abs).catch(() => null);

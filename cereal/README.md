@@ -9,11 +9,15 @@ and keeps a source-linked context record per project, so switching never means r
 
 ## Get the Mac app
 
-Download [Cereal.dmg](https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg), open it and drag **Cereal** to Applications. Open Cereal, then drag your
-project folders onto its window or Dock icon, or choose them with **Add a Project Folder…** (⌘O). macOS
-asks once whether Cereal may read a protected folder and remembers the answer; Cereal shows what it found
-and reads nothing until you approve. Closing the window keeps Cereal in the menu bar so the morning
-briefing still goes out; turn on **Open at Login** there. Everything else lives in the app.
+Download [Cereal.dmg](https://github.com/ConnorLee/cereal/releases/latest/download/Cereal.dmg), open it and drag **Cereal** to Applications. Open Cereal and it
+suggests what you've been working on: the repositories your Claude Code and Codex sessions ran in this week
+and the recent ones in your code folders (`~/Developer`, `~/Code`, `~/Projects` and the like). Tick them and
+choose **Add**. Or drag project folders onto its window or Dock icon, or choose them with **Add a Project
+Folder…** (⌘O); a folder that holds several repositories, like `~/Developer`, is offered one project each.
+macOS asks once whether Cereal may read a protected folder and remembers the answer; suggesting never asks,
+because Cereal doesn't look inside Documents, Desktop or iCloud until you add something there. Closing the
+window keeps Cereal in the menu bar so the morning briefing still goes out; turn on **Open at Login** there.
+Just looking? [Try the demo](https://cereal.work/demo.html) with sample projects first.
 
 The app bundles Node, so there is nothing else to install. It needs a Mac with Apple silicon and macOS 13
 or later. It's signed with a Developer ID and notarized by Apple, so it opens like any other Mac app.
@@ -154,6 +158,9 @@ Terminal may read those folders; allow it and Cereal can read the projects you a
 - **What Cereal keeps** shows exactly what is stored for a project, and **Forget** deletes everything
   derived from it. Folder approvals stay, so you can re-index later.
 - **Brief with Claude** is opt-in (`ANTHROPIC_API_KEY`) and sends only the current project's cited facts.
+- **Updates.** Cereal for Mac asks GitHub's public releases API whether a newer version is out, at most every
+  six hours, and says so on Home with a download link. The request carries nothing but Cereal's version.
+  `CEREAL_UPDATE_CHECK=0` turns it off.
 
 ## Boundaries
 
@@ -171,5 +178,6 @@ The server binds to 127.0.0.1 and refuses cross-origin writes.
 | `CEREAL_CLAUDE_DIR` / `CEREAL_CODEX_DIR` | `~/.claude/projects` / `~/.codex/sessions` |
 | `CEREAL_AGENT_DAYS` | `21` — how far back to read sessions |
 | `CEREAL_POLL_MS` | `15000` |
+| `CEREAL_UPDATE_CHECK` | On in Cereal for Mac; `0` stops the check for a newer release |
 | `CEREAL_APP_URL` | `http://127.0.0.1:4317` — where links in the briefing email point |
 | `CEREAL_MAIL_PROVIDER`, `RESEND_API_KEY`, `CEREAL_MAIL_FROM` | Optional; overrides the key saved in Morning Briefing → Delivery |

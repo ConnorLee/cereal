@@ -12,6 +12,7 @@ import { tildify, dataDir } from './lib/paths.mjs';
 import { claimEngine, ALREADY_RUNNING } from './lib/engine-lock.mjs';
 import { outlineSummary, claudeSummary } from './lib/summary.mjs';
 import { gatherNews } from './lib/news.mjs';
+import { updateChecker } from './lib/update.mjs';
 import { BriefingStore, mailerFor, saveMailConfig, clearMailConfig, briefingStatus, applySettings, composeBriefing, deliver, startVerification, briefingInputs, briefingNews, newsTopics, confirmVerification, checkToken } from './lib/briefing-delivery.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -99,7 +100,19 @@ route('POST', '/api/pick-folder', async () => {
   return picked ? { path: picked.replace(/\/$/, '') } : { cancelled: true };
 });
 
-route('POST', '/api/projects', async (_p, body) => engine.addProject(String(body.name || ''), String(body.path || '').replace(/^~(?=\/|$)/, process.env.HOME).replace(/\/$/, '')));
+route('POST', '/api/projects', async (_p, body) => {
+  const folder = String(body.path || '').replace(/^~(?=\/|$)/, process.env.HOME).replace(/\/$/, '');
+  // A folder of repositories comes back as a choice (one project each, or together) instead of one project.
+  const split = body.together ? null : await engine.splitFolder(folder).catch(() => null);
+  return split || engine.addProject(String(body.name || ''), folder);
+});
+route('POST', '/api/projects/bulk', async (_p, body) => engine.addProjects(Array.isArray(body.projects) ? body.projects.slice(0, 40) : []));
+// Cereal for Mac asks GitHub now and then whether a newer release is out (see lib/update.mjs).
+const VERSION = JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
+const checkUpdate = updateChecker({ current: VERSION });
+route('GET', '/api/update', async () => (process.env.CEREAL_DESKTOP && process.env.CEREAL_UPDATE_CHECK !== '0' ? checkUpdate() : { current: VERSION, latest: null, off: true }));
+route('GET', '/api/suggestions', async () => ({ suggestions: await engine.suggestions() }));
+route('GET', '/api/split', async (_p, _b, url) => (await engine.splitFolder(String(url.searchParams.get('path') || '').replace(/\/$/, ''))) || { split: false });
 
 route('POST', '/api/projects/:id/pick-folder', async ({ id }) => {
   // Native macOS folder picker. The user chooses; Cereal never browses on its own.

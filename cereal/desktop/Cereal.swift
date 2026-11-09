@@ -238,6 +238,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let self else { return }
             switch result {
             case .success(let json):
+                // A folder of several repositories comes back as a choice: one project each, or all together.
+                if json["split"] as? Bool == true, let folder = json["folder"] as? String {
+                    self.go("#/add/" + (folder.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""))
+                    if !rest.isEmpty { self.addFolders(rest) }
+                    return
+                }
                 if let id = json["id"] as? String, rest.isEmpty { self.go("#/p/\(id)/sources") }
                 if !rest.isEmpty { self.addFolders(rest) } else if json["id"] == nil { self.go("#/") }
             case .failure(let message):
@@ -520,6 +526,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         check("the interface renders", await waitFor(rendered))
         check("the native bridge is there", await js("return typeof window.cerealNative?.pickFolder") as? String == "function")
         check("the desktop layout is on", await js("return document.documentElement.classList.contains('is-desktop')") as? Bool == true)
+        if await js("return !!document.querySelector('.home-empty')") as? Bool == true {
+            check("the first-run screen finishes looking for recent projects", await waitFor("document.querySelector('#suggest') && !document.querySelector('.sug-loading')", 20),
+                  "\(await js("return document.querySelectorAll('#suggestForm .cand').length") as? Int ?? 0) suggested")
+        }
         await snap("selftest-1-window.png")
 
         web.onDragState?(true)
@@ -533,6 +543,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             let ok = await waitFor("/^#\\/p\\/[\\w-]+\\/sources$/.test(location.hash) && document.querySelector('.cand')", 15)
             check("dropping a folder on the window opens its new project's Sources", ok, await js("return location.hash") as? String ?? "")
             await snap("selftest-3-dropped-folder.png")
+        }
+        if let many = env["CEREAL_SELFTEST_DROP_MANY"] {
+            web.onFolders?([URL(fileURLWithPath: many)])
+            let ok = await waitFor("location.hash.startsWith('#/add/') && document.querySelectorAll('#suggestForm .cand').length >= 2", 15)
+            check("dropping a folder of repositories offers one project each", ok, await js("return location.hash") as? String ?? "")
+            await snap("selftest-3b-folder-of-repos.png")
         }
         if let pick = env["CEREAL_SELFTEST_PICK"] {
             picksForTest = [URL(fileURLWithPath: pick)]

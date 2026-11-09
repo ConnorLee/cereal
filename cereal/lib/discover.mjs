@@ -91,12 +91,16 @@ export async function discoverProject(def, others = []) {
     if (id) continue;
     let entries = [];
     try { entries = await fs.readdir(seed, { withFileTypes: true }); } catch { continue; }
+    // A folder named for the project (one you chose to keep several repositories together) owns the repositories
+    // in it. A broad folder like ~/Code doesn't: there a repository still has to match the project's name.
+    const seedMatch = def.keyword.test(path.basename(seed));
     for (const e of entries) {
       if (!e.isDirectory() || e.name.startsWith('.') || isIgnoredDir(e.name)) continue;
       const child = path.join(seed, e.name);
       const cid = await repoIdentity(child);
       if (cid && cid.toplevel === child) {
         if (!gitDirs.has(cid.commonDir)) gitDirs.set(cid.commonDir, { seenPaths: new Set() });
+        if (seedMatch) Object.assign(gitDirs.get(cid.commonDir), { parentMatch: true, inSeed: true });
         gitDirs.get(cid.commonDir).seenPaths.add(child);
       } else if (!cid && def.keyword.test(e.name)) {
         folders.push(child);
@@ -120,13 +124,13 @@ export async function discoverProject(def, others = []) {
       `${await branchCount(main)} local branches`,
     ];
     if (marker) evidence.push(`Contains ${marker}`);
-    if (info.parentMatch) evidence.push(`Nested inside ${tildify(path.dirname(main))}`);
+    if (info.parentMatch) evidence.push(`${info.inSeed ? 'Inside' : 'Nested inside'} ${tildify(path.dirname(main))}`);
     if (latest) evidence.push(`Latest commit ${latest.last.short} on ${latest.branch || 'detached HEAD'} — ${latest.last.date.slice(0, 10)}`);
     const record = {
       id: candidateId(commonDir), kind: 'repository', path: main, commonDir,
       label: path.basename(main), nameMatch, marker, evidence,
       worktrees: commits.map((c) => ({ path: c.path, branch: c.branch, prunable: c.prunable, locked: c.locked, last: c.last })),
-      lastActivity: latest?.last?.date || null,
+      lastActivity: latest?.last?.date || null, inSeed: !!info.inSeed,
     };
     // A marker file alone (README, package.json, an .xcodeproj) is not evidence of *this* project — it only ranks candidates.
     if (!nameMatch) { unrelated.push({ path: main, reason: `Repository name does not match ${def.name}${marker ? ` (contains ${marker}, but that alone is not evidence)` : ''}` }); continue; }
@@ -140,7 +144,9 @@ export async function discoverProject(def, others = []) {
     r.canonical = i === 0;
     r.recommended = i === 0;
     const ageDays = r.lastActivity ? (Date.now() - Date.parse(r.lastActivity)) / 86400000 : Infinity;
+    if (r.inSeed) r.recommended = true;
     if (i === 0) r.note = 'Canonical source: strongest Git evidence for this project.';
+    else if (r.inSeed) r.note = 'Inside the folder you chose for this project.';
     else if (ageDays > 90) r.note = `Separate repository, inactive for ${Math.round(ageDays)} days. Likely an archived implementation; review before approving.`;
     else r.note = 'Separate repository with a matching name. Approve only if it belongs to this project.';
   });
